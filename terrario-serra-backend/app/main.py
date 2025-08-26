@@ -6,6 +6,7 @@ import psycopg
 from app.database import engine, get_db
 from app.models import Base
 from app.routers import kill_switch_router, zones_router, health_router
+from app.routers import devices, sensors
 
 Base.metadata.create_all(bind=engine)
 
@@ -51,6 +52,8 @@ async def kill_switch_middleware(request, call_next):
 app.include_router(health_router)
 app.include_router(kill_switch_router)
 app.include_router(zones_router)
+app.include_router(devices.router)
+app.include_router(sensors.router)
 
 @app.get("/healthz")
 async def healthz():
