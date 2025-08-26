@@ -10,6 +10,9 @@ from app.routers import devices, sensors
 
 Base.metadata.create_all(bind=engine)
 
+from app.init_db import init_database
+init_database()
+
 app = FastAPI(
     title="Terrario-Serra Control API",
     description="API for controlling greenhouse and terrarium automation systems",
