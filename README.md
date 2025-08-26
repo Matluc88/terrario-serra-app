@@ -175,3 +175,5 @@ Per problemi o domande:
 ---
 
 **Sviluppato con ❤️ per il controllo intelligente di serra e terrario**
+
+<!-- Dummy comment added to verify repository access and lint functionality -->
