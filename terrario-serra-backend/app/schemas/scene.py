@@ -2,6 +2,14 @@ from pydantic import BaseModel
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 
+class TemperatureRange(BaseModel):
+    min: float
+    max: float
+
+class HumidityRange(BaseModel):
+    min: float
+    max: float
+
 class SceneBase(BaseModel):
     name: str
     slug: str
@@ -9,7 +17,11 @@ class SceneBase(BaseModel):
     is_active: bool = False
 
 class SceneCreate(SceneBase):
-    pass
+    zone_id: int
+    plants_animals: List[str] = []
+    habitat_type: Optional[str] = None
+    temperature_range: Optional[TemperatureRange] = None
+    humidity_range: Optional[HumidityRange] = None
 
 class SceneResponse(SceneBase):
     id: int

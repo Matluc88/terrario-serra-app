@@ -28,11 +28,31 @@ async def create_scene(zone_id: int, scene: SceneCreate, db: Session = Depends(g
     if not zone:
         raise HTTPException(status_code=404, detail="Zone not found")
     
+    settings = scene.settings.copy()
+    
+    if scene.temperature_range:
+        settings['temperature_range'] = {
+            'min': scene.temperature_range.min,
+            'max': scene.temperature_range.max
+        }
+    
+    if scene.humidity_range:
+        settings['humidity_range'] = {
+            'min': scene.humidity_range.min,
+            'max': scene.humidity_range.max
+        }
+    
+    if scene.plants_animals:
+        settings['plants_animals'] = scene.plants_animals
+    
+    if scene.habitat_type:
+        settings['habitat_type'] = scene.habitat_type
+    
     db_scene = Scene(
         zone_id=zone_id,
         name=scene.name,
         slug=scene.slug,
-        settings=scene.settings,
+        settings=settings,
         is_active=scene.is_active
     )
     db.add(db_scene)
@@ -55,9 +75,29 @@ async def update_scene(scene_id: int, scene_update: SceneCreate, db: Session = D
     if not scene:
         raise HTTPException(status_code=404, detail="Scene not found")
     
+    settings = scene_update.settings.copy()
+    
+    if scene_update.temperature_range:
+        settings['temperature_range'] = {
+            'min': scene_update.temperature_range.min,
+            'max': scene_update.temperature_range.max
+        }
+    
+    if scene_update.humidity_range:
+        settings['humidity_range'] = {
+            'min': scene_update.humidity_range.min,
+            'max': scene_update.humidity_range.max
+        }
+    
+    if scene_update.plants_animals:
+        settings['plants_animals'] = scene_update.plants_animals
+    
+    if scene_update.habitat_type:
+        settings['habitat_type'] = scene_update.habitat_type
+    
     scene.name = scene_update.name
     scene.slug = scene_update.slug
-    scene.settings = scene_update.settings
+    scene.settings = settings
     scene.is_active = scene_update.is_active
     
     db.commit()

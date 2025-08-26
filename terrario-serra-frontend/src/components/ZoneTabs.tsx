@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Settings, Play, Hand, Power, Thermometer, Droplets, AlertTriangle } from 'lucide-react'
-import SceneEditor from './SceneEditor'
+import MappingInterface from './MappingInterface'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
 
@@ -392,7 +392,7 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
       </TabsContent>
 
       <TabsContent value="mapping" className="space-y-4">
-        <SceneEditor zone={zone} outlets={outlets} onSceneUpdate={() => {}} />
+        <MappingInterface zone={zone} outlets={outlets} onConfigUpdate={fetchDevicesAndOutlets} />
       </TabsContent>
 
       <TabsContent value="automatic" className="space-y-4">
