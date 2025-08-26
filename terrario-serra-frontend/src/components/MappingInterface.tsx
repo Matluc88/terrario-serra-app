@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { RefreshCw, Save, RotateCcw, Play, Plus, X, AlertTriangle } from 'lucide-react'
+import { RefreshCw, Save, RotateCcw, Play, Plus, X, AlertTriangle, Thermometer } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 
 const API_BASE_URL = (import.meta as { env: { VITE_API_BASE_URL?: string } }).env.VITE_API_BASE_URL || 'http://localhost:8001'
@@ -82,6 +82,9 @@ export default function MappingInterface({ zone, outlets, onConfigUpdate }: Mapp
     humidityLow: { condition: 'humidity', operator: '<=', value: 0, actions: { on: {}, off: {} } },
     humidityHigh: { condition: 'humidity', operator: '>=', value: 0, actions: { on: {}, off: {} } }
   })
+  
+  const [currentTemp, setCurrentTemp] = useState<string>('')
+  const [currentHumidity, setCurrentHumidity] = useState<string>('')
 
   const fetchOutletTypes = useCallback(async () => {
     try {
@@ -116,6 +119,49 @@ export default function MappingInterface({ zone, outlets, onConfigUpdate }: Mapp
       setLoading(false)
     }
   }, [fetchOutletTypes, onConfigUpdate, toast])
+
+  const refreshSensorData = useCallback(async () => {
+    setLoading(true)
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/v1/sensors/zone/${zone.id}/readings`)
+      if (response.ok) {
+        const data = await response.json()
+        if (data.success && data.readings && data.readings.length > 0) {
+          const sensorReading = data.readings[0]
+          const readings = sensorReading.readings || {}
+          
+          if (readings.temperature !== undefined) {
+            setCurrentTemp(readings.temperature.toString())
+          }
+          if (readings.humidity !== undefined) {
+            setCurrentHumidity(readings.humidity.toString())
+          }
+          
+          toast({
+            title: "Sensori Aggiornati",
+            description: `Temperatura: ${readings.temperature || 'N/A'}°C, Umidità: ${readings.humidity || 'N/A'}%`
+          })
+        } else {
+          toast({
+            title: "Avviso",
+            description: "Nessun dato sensore disponibile",
+            variant: "destructive"
+          })
+        }
+      } else {
+        throw new Error('Errore nella risposta del server')
+      }
+    } catch (err) {
+      console.error('Error refreshing sensor data:', err)
+      toast({
+        title: "Errore",
+        description: "Errore durante l'aggiornamento dei sensori",
+        variant: "destructive"
+      })
+    } finally {
+      setLoading(false)
+    }
+  }, [zone.id, toast])
 
   const updateOutletConfig = (outletId: number, field: 'name' | 'type', value: string) => {
     setOutletConfigs(prev => ({
@@ -454,6 +500,27 @@ export default function MappingInterface({ zone, outlets, onConfigUpdate }: Mapp
                   />
                   <span>%</span>
                 </div>
+              </div>
+              
+              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border">
+                <div className="flex items-center gap-4">
+                  <span className="text-sm font-medium">📊 Valori Attuali:</span>
+                  <span className="text-sm">
+                    Temp: <strong>{currentTemp || '--'}°C</strong>
+                  </span>
+                  <span className="text-sm">
+                    Umidità: <strong>{currentHumidity || '--'}%</strong>
+                  </span>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={refreshSensorData}
+                  disabled={loading}
+                >
+                  <Thermometer className="h-4 w-4 mr-2" />
+                  Aggiorna Sensori
+                </Button>
               </div>
             </div>
 
