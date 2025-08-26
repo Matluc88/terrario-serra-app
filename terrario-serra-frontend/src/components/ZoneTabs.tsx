@@ -217,7 +217,7 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
     fetchDevicesAndOutlets()
     fetchSensorData()
     
-    const interval = setInterval(fetchSensorData, 30000)
+    const interval = setInterval(fetchSensorData, 1800000)
     return () => clearInterval(interval)
   }, [zone.id, fetchDevicesAndOutlets, fetchSensorData])
 
