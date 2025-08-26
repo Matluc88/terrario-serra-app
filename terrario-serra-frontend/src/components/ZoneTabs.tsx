@@ -5,7 +5,9 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Settings, Play, Hand, Power, Thermometer, Droplets, AlertTriangle } from 'lucide-react'
+import { Settings, Play, Hand, Power, Thermometer, Droplets, AlertTriangle, RefreshCw } from 'lucide-react'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { useToast } from '@/hooks/use-toast'
 import MappingInterface from './MappingInterface'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
@@ -55,18 +57,33 @@ interface SensorReading {
   }
 }
 
+interface Scene {
+  id: number
+  zone_id: number
+  name: string
+  slug: string
+  settings: Record<string, unknown>
+  is_active: boolean
+  created_at: string
+  updated_at?: string
+}
+
 interface ZoneTabsProps {
   zone: Zone
   onZoneUpdate: () => void
 }
 
 export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
+  const { toast } = useToast()
   const [activeTab, setActiveTab] = useState("manual")
   const [devices, setDevices] = useState<Device[]>([])
   const [outlets, setOutlets] = useState<Outlet[]>([])
   const [sensorData, setSensorData] = useState<SensorReading[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [scenes, setScenes] = useState<Scene[]>([])
+  const [selectedScene, setSelectedScene] = useState<Scene | null>(null)
+  const [runningAutomation, setRunningAutomation] = useState(false)
 
   const fetchDevicesAndOutlets = useCallback(async () => {
     try {
@@ -213,13 +230,56 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
     }
   }
 
+  const fetchScenes = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/v1/scenes/zone/${zone.id}`)
+      if (response.ok) {
+        const data = await response.json()
+        setScenes(data)
+      }
+    } catch (err) {
+      console.error('Error fetching scenes:', err)
+    }
+  }, [zone.id])
+
+  const runAutomation = async () => {
+    if (!selectedScene) return
+    
+    setRunningAutomation(true)
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/v1/scenes/${selectedScene.id}/evaluate`, {
+        method: 'POST'
+      })
+      
+      if (response.ok) {
+        await fetchDevicesAndOutlets()
+        toast({
+          title: "Successo",
+          description: `Automazione "${selectedScene.name}" eseguita`
+        })
+      } else {
+        throw new Error('Errore nell\'esecuzione automazione')
+      }
+    } catch (err) {
+      console.error('Error running automation:', err)
+      toast({
+        title: "Errore",
+        description: "Errore nell'esecuzione dell'automazione",
+        variant: "destructive"
+      })
+    } finally {
+      setRunningAutomation(false)
+    }
+  }
+
   useEffect(() => {
     fetchDevicesAndOutlets()
     fetchSensorData()
+    fetchScenes()
     
     const interval = setInterval(fetchSensorData, 1800000)
     return () => clearInterval(interval)
-  }, [zone.id, fetchDevicesAndOutlets, fetchSensorData])
+  }, [zone.id, fetchDevicesAndOutlets, fetchSensorData, fetchScenes])
 
   const formatTimestamp = (timestamp: string | null) => {
     if (!timestamp) return '--'
@@ -392,7 +452,14 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
       </TabsContent>
 
       <TabsContent value="mapping" className="space-y-4">
-        <MappingInterface zone={zone} outlets={outlets} onConfigUpdate={fetchDevicesAndOutlets} />
+        <MappingInterface 
+          zone={zone} 
+          outlets={outlets} 
+          onConfigUpdate={() => {
+            fetchDevicesAndOutlets()
+            fetchScenes()
+          }}
+        />
       </TabsContent>
 
       <TabsContent value="automatic" className="space-y-4">
@@ -416,23 +483,68 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
                   </Badge>
                 </div>
                 
-                <div className="text-sm text-gray-600">
-                  🚧 Selezione scene automatiche in sviluppo...
-                </div>
-                
                 <div className="space-y-2">
                   <h4 className="font-medium">Scene Disponibili:</h4>
-                  <div className="text-sm text-gray-600">
-                    Nessuna scena configurata
-                  </div>
+                  {scenes.length === 0 ? (
+                    <div className="text-sm text-gray-600">
+                      Nessuna scena configurata. Vai al tab Mapping per creare una scena.
+                    </div>
+                  ) : (
+                    <Select value={selectedScene?.id.toString() || ''} onValueChange={(value: string) => {
+                      const scene = scenes.find((s: Scene) => s.id === parseInt(value))
+                      setSelectedScene(scene || null)
+                    }}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Seleziona una scena" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {scenes.map((scene) => (
+                          <SelectItem key={scene.id} value={scene.id.toString()}>
+                            {scene.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                 </div>
                 
+                {selectedScene && (
+                  <div className="p-3 border rounded-lg bg-gray-50">
+                    <div className="text-sm">
+                      <div className="font-medium">{selectedScene.name}</div>
+                      <div className="text-gray-600 mt-1">
+                        Creata: {new Date(selectedScene.created_at).toLocaleDateString('it-IT')}
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
                 <div className="flex gap-2">
-                  <Button variant="outline" size="sm" disabled>
-                    Seleziona Scena
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={fetchScenes}
+                    disabled={loading}
+                  >
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Aggiorna Scene
                   </Button>
-                  <Button variant="outline" size="sm" disabled>
-                    Attiva Automazione
+                  <Button 
+                    size="sm" 
+                    onClick={runAutomation}
+                    disabled={!selectedScene || runningAutomation}
+                  >
+                    {runningAutomation ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Esecuzione...
+                      </>
+                    ) : (
+                      <>
+                        <Play className="h-4 w-4 mr-2" />
+                        Run Automazione
+                      </>
+                    )}
                   </Button>
                 </div>
               </div>
