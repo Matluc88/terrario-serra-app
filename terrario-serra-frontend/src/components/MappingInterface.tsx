@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { RefreshCw, Save, RotateCcw, Play, Plus, X, AlertTriangle } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
 const API_BASE_URL = (import.meta as { env: { VITE_API_BASE_URL?: string } }).env.VITE_API_BASE_URL || 'http://localhost:8001'
 
@@ -58,6 +59,9 @@ export default function MappingInterface({ zone, outlets, onConfigUpdate }: Mapp
   const { toast } = useToast()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showTestDialog, setShowTestDialog] = useState(false)
+  const [showSaveDialog, setShowSaveDialog] = useState(false)
+  const [sceneName, setSceneName] = useState('')
 
   const [tempMin, setTempMin] = useState('')
   const [tempMax, setTempMax] = useState('')
@@ -189,11 +193,17 @@ export default function MappingInterface({ zone, outlets, onConfigUpdate }: Mapp
   }
 
   const saveConfiguration = async () => {
+    if (!sceneName.trim()) {
+      setShowSaveDialog(true)
+      return
+    }
+
     setLoading(true)
     try {
       const configData = {
-        name: `Configurazione ${zone.slug === 'serra' ? 'Serra' : 'Terrario'}`,
-        slug: `config-${zone.slug}-${Date.now()}`,
+        zone_id: zone.id,
+        name: sceneName,
+        slug: `${sceneName.toLowerCase().replace(/\s+/g, '-')}-${zone.slug}-${Date.now()}`,
         plants_animals: plantsAnimals,
         habitat_type: habitatType,
         temperature_range: tempMin && tempMax ? { min: parseFloat(tempMin), max: parseFloat(tempMax) } : null,
@@ -214,8 +224,11 @@ export default function MappingInterface({ zone, outlets, onConfigUpdate }: Mapp
       if (response.ok) {
         toast({
           title: "Successo",
-          description: "Configurazione salvata con successo"
+          description: `Scena "${sceneName}" salvata con successo`
         })
+        setSceneName('')
+        setShowSaveDialog(false)
+        onConfigUpdate?.()
       } else {
         throw new Error('Errore nel salvataggio')
       }
@@ -247,11 +260,8 @@ export default function MappingInterface({ zone, outlets, onConfigUpdate }: Mapp
     })
   }
 
-  const testRules = async () => {
-    toast({
-      title: "Test Regole",
-      description: "Funzionalità di test in sviluppo..."
-    })
+  const testRules = () => {
+    setShowTestDialog(true)
   }
 
   useEffect(() => {
@@ -726,6 +736,136 @@ export default function MappingInterface({ zone, outlets, onConfigUpdate }: Mapp
           </div>
         </CardContent>
       </Card>
+
+      {/* Test Dialog */}
+      <Dialog open={showTestDialog} onOpenChange={setShowTestDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>🧪 Test Condizioni {zoneTitle}</DialogTitle>
+            <DialogDescription>
+              Riepilogo delle condizioni configurate e relative azioni
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-3">
+              <h4 className="font-medium">📐 Condizioni Temperatura:</h4>
+              <div className="space-y-2 text-sm">
+                <div className="p-3 border rounded-lg">
+                  <div className="font-medium">Se T ≤ {tempMin}°C:</div>
+                  <div className="mt-1">
+                    <span className="text-green-600">Accendi: </span>
+                    {Object.entries(rules.tempLow.actions.on).filter(([_, active]) => active).map(([outletId]) => {
+                      const outlet = outlets.find(o => o.id === parseInt(outletId))
+                      return outlet ? (outletConfigs[outlet.id]?.name || `Switch${outlets.indexOf(outlet) + 1}`) : ''
+                    }).join(', ') || 'Nessuno'}
+                  </div>
+                  <div>
+                    <span className="text-red-600">Spegni: </span>
+                    {Object.entries(rules.tempLow.actions.off).filter(([_, active]) => active).map(([outletId]) => {
+                      const outlet = outlets.find(o => o.id === parseInt(outletId))
+                      return outlet ? (outletConfigs[outlet.id]?.name || `Switch${outlets.indexOf(outlet) + 1}`) : ''
+                    }).join(', ') || 'Nessuno'}
+                  </div>
+                </div>
+                <div className="p-3 border rounded-lg">
+                  <div className="font-medium">Se T ≥ {tempMax}°C:</div>
+                  <div className="mt-1">
+                    <span className="text-green-600">Accendi: </span>
+                    {Object.entries(rules.tempHigh.actions.on).filter(([_, active]) => active).map(([outletId]) => {
+                      const outlet = outlets.find(o => o.id === parseInt(outletId))
+                      return outlet ? (outletConfigs[outlet.id]?.name || `Switch${outlets.indexOf(outlet) + 1}`) : ''
+                    }).join(', ') || 'Nessuno'}
+                  </div>
+                  <div>
+                    <span className="text-red-600">Spegni: </span>
+                    {Object.entries(rules.tempHigh.actions.off).filter(([_, active]) => active).map(([outletId]) => {
+                      const outlet = outlets.find(o => o.id === parseInt(outletId))
+                      return outlet ? (outletConfigs[outlet.id]?.name || `Switch${outlets.indexOf(outlet) + 1}`) : ''
+                    }).join(', ') || 'Nessuno'}
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div className="space-y-3">
+              <h4 className="font-medium">💧 Condizioni Umidità:</h4>
+              <div className="space-y-2 text-sm">
+                <div className="p-3 border rounded-lg">
+                  <div className="font-medium">Se UR ≤ {humidityMin}%:</div>
+                  <div className="mt-1">
+                    <span className="text-green-600">Accendi: </span>
+                    {Object.entries(rules.humidityLow.actions.on).filter(([_, active]) => active).map(([outletId]) => {
+                      const outlet = outlets.find(o => o.id === parseInt(outletId))
+                      return outlet ? (outletConfigs[outlet.id]?.name || `Switch${outlets.indexOf(outlet) + 1}`) : ''
+                    }).join(', ') || 'Nessuno'}
+                  </div>
+                  <div>
+                    <span className="text-red-600">Spegni: </span>
+                    {Object.entries(rules.humidityLow.actions.off).filter(([_, active]) => active).map(([outletId]) => {
+                      const outlet = outlets.find(o => o.id === parseInt(outletId))
+                      return outlet ? (outletConfigs[outlet.id]?.name || `Switch${outlets.indexOf(outlet) + 1}`) : ''
+                    }).join(', ') || 'Nessuno'}
+                  </div>
+                </div>
+                <div className="p-3 border rounded-lg">
+                  <div className="font-medium">Se UR ≥ {humidityMax}%:</div>
+                  <div className="mt-1">
+                    <span className="text-green-600">Accendi: </span>
+                    {Object.entries(rules.humidityHigh.actions.on).filter(([_, active]) => active).map(([outletId]) => {
+                      const outlet = outlets.find(o => o.id === parseInt(outletId))
+                      return outlet ? (outletConfigs[outlet.id]?.name || `Switch${outlets.indexOf(outlet) + 1}`) : ''
+                    }).join(', ') || 'Nessuno'}
+                  </div>
+                  <div>
+                    <span className="text-red-600">Spegni: </span>
+                    {Object.entries(rules.humidityHigh.actions.off).filter(([_, active]) => active).map(([outletId]) => {
+                      const outlet = outlets.find(o => o.id === parseInt(outletId))
+                      return outlet ? (outletConfigs[outlet.id]?.name || `Switch${outlets.indexOf(outlet) + 1}`) : ''
+                    }).join(', ') || 'Nessuno'}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setShowTestDialog(false)}>
+              Chiudi
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Save Scene Dialog */}
+      <Dialog open={showSaveDialog} onOpenChange={setShowSaveDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>💾 Salva Scena {zoneTitle}</DialogTitle>
+            <DialogDescription>
+              Inserisci un nome per la scena che stai salvando
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="scene-name">Nome Scena</Label>
+              <Input
+                id="scene-name"
+                value={sceneName}
+                onChange={(e) => setSceneName(e.target.value)}
+                placeholder={`es. ${zone.slug === 'serra' ? 'Estate Giorno' : 'Tropicale Diurno'}`}
+                onKeyPress={(e) => e.key === 'Enter' && sceneName.trim() && saveConfiguration()}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowSaveDialog(false)}>
+              Annulla
+            </Button>
+            <Button onClick={saveConfiguration} disabled={!sceneName.trim() || loading}>
+              {loading ? 'Salvataggio...' : 'Salva Scena'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
