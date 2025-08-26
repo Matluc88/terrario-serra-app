@@ -9,5 +9,14 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  preview: {
+    host: true,
+    port: process.env.PORT ? parseInt(process.env.PORT) : 4173,
+    allowedHosts: ['terrario-serra-app-1.onrender.com']
+  },
+  server: {
+    host: true,
+    port: 5173
+  }
 })
 
