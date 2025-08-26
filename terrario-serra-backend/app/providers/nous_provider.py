@@ -4,6 +4,7 @@ import logging
 from typing import Dict, Any, Optional, List, Tuple
 import httpx
 from datetime import datetime, timedelta
+from app.database import get_utc_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,7 @@ class NousE6Provider:
             cache_key = f"sensor_{sensor_id}"
             if cache_key in self._cache:
                 cached_data, timestamp = self._cache[cache_key]
-                if datetime.utcnow() - timestamp < timedelta(seconds=self._cache_ttl):
+                if get_utc_datetime() - timestamp < timedelta(seconds=self._cache_ttl):
                     logger.debug(f"Returning cached reading for sensor {sensor_id}")
                     return cached_data
             
@@ -67,10 +68,10 @@ class NousE6Provider:
                 "success": True,
                 "sensor_id": sensor_id,
                 "readings": readings,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": get_utc_datetime().isoformat()
             }
             
-            self._cache[cache_key] = (result, datetime.utcnow())
+            self._cache[cache_key] = (result, get_utc_datetime())
             
             return result
             
@@ -138,7 +139,7 @@ class NousE6Provider:
                 try:
                     timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
                 except:
-                    timestamp = datetime.utcnow()
+                    timestamp = get_utc_datetime()
             
             return temperature, humidity, timestamp
             
@@ -162,7 +163,7 @@ class NousE6Provider:
                 "provider": "NousE6Provider",
                 "test_sensor": test_sensor,
                 "cache_size": len(self._cache),
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": get_utc_datetime().isoformat()
             }
             
         except Exception as e:
@@ -170,5 +171,5 @@ class NousE6Provider:
                 "success": False,
                 "provider": "NousE6Provider", 
                 "error": str(e),
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": get_utc_datetime().isoformat()
             }
