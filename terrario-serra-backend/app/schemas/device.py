@@ -25,3 +25,7 @@ class OutletResponse(BaseModel):
     
     class Config:
         from_attributes = True
+
+class OutletConfigUpdate(BaseModel):
+    custom_name: str
+    role: str

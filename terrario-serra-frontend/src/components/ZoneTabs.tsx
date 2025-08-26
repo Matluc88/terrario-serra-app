@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Settings, Play, Hand, Power, Thermometer, Droplets, AlertTriangle } from 'lucide-react'
+import MappingInterface from './MappingInterface'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
 
@@ -15,7 +16,7 @@ interface Zone {
   name: string
   mode: string
   active: boolean
-  settings: Record<string, any>
+  settings: Record<string, unknown>
   created_at: string
   updated_at?: string
 }
@@ -26,7 +27,7 @@ interface Device {
   provider_device_id: string
   name: string
   zone_id: number
-  meta: Record<string, any>
+  meta: Record<string, unknown>
 }
 
 interface Outlet {
@@ -67,7 +68,7 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const fetchDevicesAndOutlets = async () => {
+  const fetchDevicesAndOutlets = useCallback(async () => {
     try {
       console.log(`Fetching devices for zone ${zone.id}`)
       const devicesResponse = await fetch(`${API_BASE_URL}/api/v1/devices/`)
@@ -122,14 +123,14 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
       console.error('Error in fetchDevicesAndOutlets:', err)
       setError('Errore nel caricamento dispositivi')
     }
-  }
+  }, [zone.id])
 
-  const fetchSensorData = async () => {
+  const fetchSensorData = useCallback(async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/v1/sensors/zone/${zone.id}/readings`)
       const data = await response.json()
       if (data.success && data.readings) {
-        const transformedData = data.readings.map((reading: any) => ({
+        const transformedData = data.readings.map((reading: { sensor_id: number; sensor_name: string; readings?: { temperature?: number; humidity?: number }; timestamp?: string }) => ({
           sensor_id: reading.sensor_id,
           sensor_name: reading.sensor_name,
           temperature: {
@@ -148,7 +149,7 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
     } catch (err) {
       console.error('Errore nel caricamento sensori:', err)
     }
-  }
+  }, [zone.id])
 
   const switchOutlet = async (deviceId: number, outletId: number, state: boolean) => {
     setLoading(true)
@@ -218,7 +219,7 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
     
     const interval = setInterval(fetchSensorData, 30000)
     return () => clearInterval(interval)
-  }, [zone.id])
+  }, [zone.id, fetchDevicesAndOutlets, fetchSensorData])
 
   const formatTimestamp = (timestamp: string | null) => {
     if (!timestamp) return '--'
@@ -391,29 +392,7 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
       </TabsContent>
 
       <TabsContent value="mapping" className="space-y-4">
-        <Card>
-          <CardHeader>
-            <CardTitle>Creazione Scene</CardTitle>
-            <CardDescription>
-              Crea e modifica scene personalizzate per la {zone.slug === 'serra' ? 'serra' : 'terrario'}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="text-sm text-gray-600">
-              🚧 Editor scene in sviluppo...
-            </div>
-            <div className="mt-4 space-y-2">
-              <h4 className="font-medium">Funzionalità Previste:</h4>
-              <ul className="text-sm text-gray-600 space-y-1">
-                <li>• Creazione scene da zero con nome personalizzabile</li>
-                <li>• Configurazione parametri temperatura/umidità target</li>
-                <li>• Assegnazione comportamenti alle prese</li>
-                <li>• Editor regole visuale per condizioni → azioni</li>
-                <li>• Import/Export scene in formato JSON</li>
-              </ul>
-            </div>
-          </CardContent>
-        </Card>
+        <MappingInterface zone={zone} outlets={outlets} onConfigUpdate={fetchDevicesAndOutlets} />
       </TabsContent>
 
       <TabsContent value="automatic" className="space-y-4">

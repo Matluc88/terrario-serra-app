@@ -13,7 +13,7 @@ interface Zone {
   name: string
   mode: string
   active: boolean
-  settings: Record<string, any>
+  settings: Record<string, unknown>
   created_at: string
   updated_at?: string
 }

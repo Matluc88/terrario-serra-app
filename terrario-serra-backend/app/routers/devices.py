@@ -8,7 +8,7 @@ from app.database import get_db
 from app.models.device import Device, Outlet
 from app.models.zone import Zone
 from app.providers.tuya_provider import TuyaProvider
-from app.schemas.device import DeviceResponse, OutletResponse
+from app.schemas.device import DeviceResponse, OutletResponse, OutletConfigUpdate
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/devices", tags=["devices"])
@@ -292,3 +292,59 @@ async def set_outlet_countdown(
     except Exception as e:
         logger.error(f"Error setting countdown: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.put("/{device_id}/outlets/{outlet_id}/config")
+async def update_outlet_config(
+    device_id: int,
+    outlet_id: int,
+    config: OutletConfigUpdate,
+    db: Session = Depends(get_db)
+):
+    """Update outlet configuration (name and role)"""
+    device = db.query(Device).filter(Device.id == device_id).first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    
+    outlet = db.query(Outlet).filter(
+        Outlet.id == outlet_id,
+        Outlet.device_id == device_id
+    ).first()
+    if not outlet:
+        raise HTTPException(status_code=404, detail="Outlet not found")
+    
+    try:
+        outlet.custom_name = config.custom_name
+        outlet.role = config.role
+        db.commit()
+        
+        return {
+            "success": True,
+            "device_id": device_id,
+            "outlet_id": outlet_id,
+            "custom_name": config.custom_name,
+            "role": config.role
+        }
+        
+    except Exception as e:
+        logger.error(f"Error updating outlet config: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/outlet-types")
+async def get_outlet_types():
+    """Get available outlet types for dropdowns"""
+    return {
+        "serra": [
+            {"value": "riscaldatore", "label": "Riscaldatore"},
+            {"value": "ventilatore", "label": "Ventilatore"},
+            {"value": "umidificatore", "label": "Umidificatore"},
+            {"value": "deumidificatore", "label": "Deumidificatore"},
+            {"value": "lampada-led", "label": "Lampada LED"},
+            {"value": "pompa-nutrienti", "label": "Pompa Nutrienti"}
+        ],
+        "terrario": [
+            {"value": "lampada-uvb", "label": "Lampada UVB"},
+            {"value": "spot-calore", "label": "Spot Calore"},
+            {"value": "ceramica-notturna", "label": "Ceramica Notturna"},
+            {"value": "nebulizzatore", "label": "Nebulizzatore"}
+        ]
+    }
