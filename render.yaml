@@ -1,0 +1,55 @@
+services:
+  - type: web
+    name: terrario-serra-backend
+    env: python
+    rootDir: terrario-serra-backend
+    buildCommand: poetry install
+    startCommand: poetry run uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: terrario-serra-db
+          property: connectionString
+      - key: TUYA_ACCESS_KEY
+        value: 9s8ravqkdqfayryjk9pd
+      - key: TUYA_SECRET_KEY
+        value: 8163232923c34ba5a0d68c76ba903400
+      - key: TUYA_CLIENT_ID
+        value: 9s8ravqkdqfayryjk9pd
+      - key: TUYA_API_BASE
+        value: https://openapi.tuyaeu.com
+      - key: TUYA_REGION
+        value: eu
+      - key: SERRA_POWER_STRIP_ID
+        value: bfac84583c14518dedjatx
+      - key: TERRARIO_POWER_STRIP_ID
+        value: bf706e173c8fca8ec2evnv
+      - key: SERRA_SENSOR_ID
+        value: bffca357e3c45a16783rsa
+      - key: TERRARIO_SENSOR_ID
+        value: bfcd3d17b88bd88cc0qeie
+      - key: SECRET_KEY
+        generateValue: true
+      - key: API_KEY_ADMIN
+        generateValue: true
+      - key: RULE_TICK_SECONDS
+        value: 30
+      - key: SENSOR_STALE_SECONDS
+        value: 600
+      - key: DEBUG
+        value: false
+
+  - type: web
+    name: terrario-serra-frontend
+    env: static
+    rootDir: terrario-serra-frontend
+    buildCommand: npm run build
+    staticPublishPath: ./dist
+    envVars:
+      - key: VITE_API_BASE_URL
+        value: https://terrario-serra-app.onrender.com
+
+databases:
+  - name: terrario-serra-db
+    databaseName: terrario_serra
+    user: terrario_user
