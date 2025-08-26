@@ -172,6 +172,7 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
             ? { ...outlet, last_state: state }
             : outlet
         ))
+        onZoneUpdate()
       } else {
         throw new Error(result.error || 'Comando fallito')
       }
@@ -200,6 +201,7 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
       
       if (result.success) {
         setOutlets(prev => prev.map(outlet => ({ ...outlet, last_state: state })))
+        onZoneUpdate()
       } else {
         throw new Error(result.error || 'Comando fallito')
       }
