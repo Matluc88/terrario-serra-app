@@ -24,6 +24,26 @@ def get_tuya_provider() -> TuyaProvider:
     
     return TuyaProvider(access_id, access_secret, region)
 
+@router.get("/outlet-types")
+async def get_outlet_types():
+    """Get available outlet types for dropdowns"""
+    return {
+        "serra": [
+            {"value": "riscaldatore", "label": "Riscaldatore"},
+            {"value": "ventilatore", "label": "Ventilatore"},
+            {"value": "umidificatore", "label": "Umidificatore"},
+            {"value": "deumidificatore", "label": "Deumidificatore"},
+            {"value": "lampada-led", "label": "Lampada LED"},
+            {"value": "pompa-nutrienti", "label": "Pompa Nutrienti"}
+        ],
+        "terrario": [
+            {"value": "lampada-uvb", "label": "Lampada UVB"},
+            {"value": "spot-calore", "label": "Spot Calore"},
+            {"value": "ceramica-notturna", "label": "Ceramica Notturna"},
+            {"value": "nebulizzatore", "label": "Nebulizzatore"}
+        ]
+    }
+
 @router.get("/", response_model=List[DeviceResponse])
 async def list_devices(db: Session = Depends(get_db)):
     """Get all devices"""
@@ -328,23 +348,3 @@ async def update_outlet_config(
     except Exception as e:
         logger.error(f"Error updating outlet config: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/outlet-types")
-async def get_outlet_types():
-    """Get available outlet types for dropdowns"""
-    return {
-        "serra": [
-            {"value": "riscaldatore", "label": "Riscaldatore"},
-            {"value": "ventilatore", "label": "Ventilatore"},
-            {"value": "umidificatore", "label": "Umidificatore"},
-            {"value": "deumidificatore", "label": "Deumidificatore"},
-            {"value": "lampada-led", "label": "Lampada LED"},
-            {"value": "pompa-nutrienti", "label": "Pompa Nutrienti"}
-        ],
-        "terrario": [
-            {"value": "lampada-uvb", "label": "Lampada UVB"},
-            {"value": "spot-calore", "label": "Spot Calore"},
-            {"value": "ceramica-notturna", "label": "Ceramica Notturna"},
-            {"value": "nebulizzatore", "label": "Nebulizzatore"}
-        ]
-    }

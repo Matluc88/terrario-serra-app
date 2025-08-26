@@ -4,6 +4,7 @@ import logging
 from typing import Dict, Any, Optional, List
 import tinytuya
 from datetime import datetime
+from app.database import get_utc_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,7 @@ class TuyaProvider:
                 "success": True,
                 "device_id": device_id,
                 "status": status_map,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": get_utc_datetime().isoformat()
             }
             
         except Exception as e:
@@ -109,7 +110,7 @@ class TuyaProvider:
         return {
             "success": all_success,
             "results": results,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": get_utc_datetime().isoformat()
         }
     
     async def set_countdown(self, device_id: str, channel: str, seconds: int) -> Dict[str, Any]:
@@ -159,7 +160,7 @@ class TuyaProvider:
                 "device_id": device_id,
                 "commands": commands,
                 "response": response,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": get_utc_datetime().isoformat()
             }
             
         except Exception as e:
@@ -200,7 +201,7 @@ class TuyaProvider:
                 "success": True,
                 "device_id": device_id,
                 "readings": readings,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": get_utc_datetime().isoformat()
             }
             
         except Exception as e:

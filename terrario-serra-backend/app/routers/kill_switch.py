@@ -5,6 +5,7 @@ from app.models.kill_switch import KillSwitch
 from app.models.audit import AuditLog
 from app.schemas.kill_switch import KillSwitchResponse, KillSwitchActivate
 from datetime import datetime
+from app.database import get_timezone_aware_datetime, get_utc_datetime
 import json
 
 router = APIRouter(prefix="/api/v1/kill", tags=["kill-switch"])
@@ -37,7 +38,7 @@ async def activate_kill_switch(
     new_kill_switch = KillSwitch(
         is_active=True,
         reason=request.reason,
-        activated_at=datetime.utcnow()
+        activated_at=get_timezone_aware_datetime()
     )
     db.add(new_kill_switch)
     
@@ -45,7 +46,7 @@ async def activate_kill_switch(
         action="kill_switch_activated",
         details={
             "reason": request.reason,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": get_utc_datetime().isoformat()
         }
     )
     db.add(audit_log)
@@ -66,14 +67,14 @@ async def deactivate_kill_switch(db: Session = Depends(get_db)):
     
     new_kill_switch = KillSwitch(
         is_active=False,
-        deactivated_at=datetime.utcnow()
+        deactivated_at=get_timezone_aware_datetime()
     )
     db.add(new_kill_switch)
     
     audit_log = AuditLog(
         action="kill_switch_deactivated",
         details={
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": get_utc_datetime().isoformat()
         }
     )
     db.add(audit_log)

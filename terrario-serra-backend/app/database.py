@@ -4,6 +4,8 @@ from sqlalchemy.orm import sessionmaker
 from pydantic_settings import BaseSettings
 import os
 from dotenv import load_dotenv
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 load_dotenv()
 
@@ -17,6 +19,7 @@ class Settings(BaseSettings):
     tuya_client_id: str = os.getenv("TUYA_CLIENT_ID", "")
     tuya_api_base: str = os.getenv("TUYA_API_BASE", "https://openapi.tuyaeu.com")
     tuya_region: str = os.getenv("TUYA_REGION", "eu")
+    timezone: str = os.getenv("TIMEZONE", "Europe/Rome")
     
     serra_power_strip_id: str = os.getenv("SERRA_POWER_STRIP_ID", "")
     terrario_power_strip_id: str = os.getenv("TERRARIO_POWER_STRIP_ID", "")
@@ -43,3 +46,11 @@ def get_db():
         yield db
     finally:
         db.close()
+
+def get_timezone_aware_datetime() -> datetime:
+    """Get current datetime in configured timezone"""
+    return datetime.now(ZoneInfo(settings.timezone))
+
+def get_utc_datetime() -> datetime:
+    """Get current datetime in UTC with timezone info"""
+    return datetime.now(ZoneInfo("UTC"))
