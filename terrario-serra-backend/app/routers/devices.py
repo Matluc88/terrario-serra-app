@@ -128,6 +128,24 @@ async def switch_outlet(
     if not outlet.enabled:
         raise HTTPException(status_code=400, detail="Outlet is disabled")
     
+    access_id = os.getenv("TUYA_ACCESS_KEY")
+    access_secret = os.getenv("TUYA_SECRET_KEY")
+    
+    if not access_id or not access_secret:
+        logger.info(f"Tuya credentials not configured, updating outlet {outlet_id} state in mock mode")
+        outlet.last_state = state
+        db.commit()
+        
+        return {
+            "success": True,
+            "device_id": device_id,
+            "outlet_id": outlet_id,
+            "channel": outlet.channel,
+            "state": state,
+            "mock_mode": True,
+            "message": "Outlet state updated in database (mock mode)"
+        }
+    
     try:
         tuya = get_tuya_provider()
         result = await tuya.switch_outlet(device.provider_device_id, outlet.channel, state)
