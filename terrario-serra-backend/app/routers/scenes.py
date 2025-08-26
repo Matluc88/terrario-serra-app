@@ -191,6 +191,10 @@ async def activate_scene(scene_id: int, db: Session = Depends(get_db)):
 @router.post("/{scene_id}/evaluate")
 async def evaluate_scene_rules(scene_id: int, db: Session = Depends(get_db)):
     """Evaluate scene rules and execute actions"""
+    from app.models.device import Device, Outlet
+    from app.providers.tuya_provider import TuyaProvider
+    import os
+    
     scene = db.query(Scene).filter(Scene.id == scene_id).first()
     if not scene:
         raise HTTPException(status_code=404, detail="Scene not found")
@@ -198,17 +202,120 @@ async def evaluate_scene_rules(scene_id: int, db: Session = Depends(get_db)):
     if not scene.is_active:
         return {"success": False, "message": "Scene is not active"}
     
-    rules = db.query(SceneRule).filter(SceneRule.scene_id == scene_id).order_by(SceneRule.priority.desc()).all()
+    access_id = os.getenv("TUYA_ACCESS_KEY")
+    access_secret = os.getenv("TUYA_SECRET_KEY")
+    region = os.getenv("TUYA_REGION", "eu")
+    
+    simulation_mode = not access_id or not access_secret
+    
+    if simulation_mode:
+        logger.info("Running in simulation mode - Tuya credentials not configured")
+        tuya = None
+    else:
+        tuya = TuyaProvider(access_id, access_secret, region)
+    
+    scene_rules = scene.settings.get("rules", {})
+    outlet_configs = scene.settings.get("outlet_configs", {})
     
     executed_actions = []
-    for rule in rules:
-        executed_actions.append({
-            "rule_id": rule.id,
-            "rule_name": rule.name,
-            "condition": rule.condition,
-            "action": rule.action,
-            "executed": True  # Placeholder - actual execution logic would go here
-        })
+    
+    for rule_name, rule_data in scene_rules.items():
+        try:
+            actions_on = rule_data.get("actions", {}).get("on", {})
+            
+            for outlet_id, should_activate in actions_on.items():
+                if not should_activate:
+                    continue
+                    
+                outlet_config = outlet_configs.get(outlet_id)
+                if not outlet_config:
+                    logger.error(f"Outlet config not found for outlet {outlet_id}")
+                    executed_actions.append({
+                        "rule_name": rule_name,
+                        "outlet_id": outlet_id,
+                        "executed": False,
+                        "error": f"Outlet config not found for outlet {outlet_id}"
+                    })
+                    continue
+                
+                outlet_name = outlet_config.get("name")
+                if not outlet_name:
+                    logger.error(f"Outlet name not found in config for outlet {outlet_id}")
+                    executed_actions.append({
+                        "rule_name": rule_name,
+                        "outlet_id": outlet_id,
+                        "executed": False,
+                        "error": f"Outlet name not found in config for outlet {outlet_id}"
+                    })
+                    continue
+                
+                outlet = db.query(Outlet).join(Device).filter(
+                    Device.zone_id == scene.zone_id,
+                    Outlet.custom_name == outlet_name
+                ).first()
+                
+                if not outlet:
+                    logger.error(f"Outlet {outlet_name} not found in zone {scene.zone_id}")
+                    executed_actions.append({
+                        "rule_name": rule_name,
+                        "outlet_id": outlet_id,
+                        "outlet_name": outlet_name,
+                        "executed": False,
+                        "error": f"Outlet {outlet_name} not found"
+                    })
+                    continue
+                
+                device = outlet.device
+                
+                if simulation_mode:
+                    logger.info(f"SIMULATION: Successfully switched {outlet_name} ON for rule {rule_name}")
+                    result = {"success": True, "message": "Simulated switch operation"}
+                    executed_actions.append({
+                        "rule_name": rule_name,
+                        "outlet_id": outlet_id,
+                        "outlet_name": outlet_name,
+                        "executed": True,
+                        "state": True,
+                        "result": result,
+                        "simulation": True
+                    })
+                    
+                    outlet.last_state = True
+                    db.commit()
+                else:
+                    result = await tuya.switch_outlet(device.provider_device_id, outlet.channel, True)
+                    
+                    if result.get("success"):
+                        logger.info(f"Successfully switched {outlet_name} ON for rule {rule_name}")
+                        executed_actions.append({
+                            "rule_name": rule_name,
+                            "outlet_id": outlet_id,
+                            "outlet_name": outlet_name,
+                            "executed": True,
+                            "state": True,
+                            "result": result
+                        })
+                        
+                        outlet.last_state = True
+                        db.commit()
+                    else:
+                        logger.error(f"Failed to switch {outlet_name}: {result.get('error')}")
+                        executed_actions.append({
+                            "rule_name": rule_name,
+                            "outlet_id": outlet_id,
+                            "outlet_name": outlet_name,
+                            "executed": False,
+                            "error": f"Switch command failed: {result.get('error')}",
+                            "state": True
+                        })
+                    
+        except Exception as e:
+            logger.error(f"Error executing rule {rule_name}: {str(e)}")
+            executed_actions.append({
+                "rule_name": rule_name,
+                "executed": False,
+                "error": str(e)
+            })
     
     return {
         "success": True,
