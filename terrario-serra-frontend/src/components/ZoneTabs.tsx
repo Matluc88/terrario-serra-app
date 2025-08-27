@@ -591,7 +591,6 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
       <TabsContent value="scenes" className="space-y-4">
         <SceneEditor 
           zone={zone} 
-          outlets={outlets} 
           onSceneUpdate={() => {
             fetchDevicesAndOutlets()
             fetchScenes()

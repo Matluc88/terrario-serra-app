@@ -1,35 +1,20 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { Switch } from '@/components/ui/switch'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Plus, Trash2, Save, Play, Settings, AlertTriangle } from 'lucide-react'
+import { Settings, AlertTriangle } from 'lucide-react'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
 
 interface Zone {
   id: number
-  slug: string
   name: string
-  mode: string
-  active: boolean
-  settings: Record<string, unknown>
-  created_at: string
+  slug: string
+  description?: string
+  created_at?: string
   updated_at?: string
-}
-
-interface Outlet {
-  id: number
-  device_id: number
-  channel: string
-  role: string
-  custom_name: string
-  enabled: boolean
-  last_state: boolean
 }
 
 interface Scene {
@@ -37,7 +22,12 @@ interface Scene {
   zone_id: number
   name: string
   slug: string
-  settings: Record<string, unknown>
+  settings?: {
+    temperature_target?: number
+    humidity_target?: number
+    plants?: string[]
+    habitat_type?: string
+  }
   is_active: boolean
   created_at: string
   updated_at?: string
@@ -47,20 +37,27 @@ interface SceneRule {
   id: number
   scene_id: number
   name: string
-  condition: Record<string, unknown>
-  action: Record<string, unknown>
+  condition: {
+    type: string
+    operator: string
+    value: number
+  }
+  action: {
+    type: string
+    outlet_id?: number
+    state?: boolean
+  }
   priority: number
-  created_at: string
+  created_at?: string
   updated_at?: string
 }
 
 interface SceneEditorProps {
   zone: Zone
-  outlets: Outlet[]
   onSceneUpdate: () => void
 }
 
-export default function SceneEditor({ zone, outlets, onSceneUpdate }: SceneEditorProps) {
+export default function SceneEditor({ zone, onSceneUpdate }: SceneEditorProps) {
   const [scenes, setScenes] = useState<Scene[]>([])
   const [selectedScene, setSelectedScene] = useState<Scene | null>(null)
   const [sceneRules, setSceneRules] = useState<SceneRule[]>([])
@@ -68,225 +65,56 @@ export default function SceneEditor({ zone, outlets, onSceneUpdate }: SceneEdito
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
 
-  const [newSceneName, setNewSceneName] = useState('')
-  const [newSceneSlug, setNewSceneSlug] = useState('')
-  const [targetTemperature, setTargetTemperature] = useState('')
-  const [targetHumidity, setTargetHumidity] = useState('')
-
-  const [newRuleName, setNewRuleName] = useState('')
-  const [ruleConditionType, setRuleConditionType] = useState('temperature')
-  const [ruleConditionOperator, setRuleConditionOperator] = useState('>')
-  const [ruleConditionValue, setRuleConditionValue] = useState('')
-  const [ruleActionType] = useState('outlet')
-  const [ruleActionOutlet, setRuleActionOutlet] = useState('')
-  const [ruleActionState, setRuleActionState] = useState(true)
-
   const fetchScenes = useCallback(async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/v1/scenes/zone/${zone.id}`)
+      const response = await fetch(`${API_BASE_URL}/api/v1/zones/${zone.id}/scenes`)
       if (response.ok) {
         const data = await response.json()
         setScenes(data)
       }
-    } catch (err) {
-      console.error('Error fetching scenes:', err)
+    } catch (error) {
+      console.error('Error fetching scenes:', error)
     }
   }, [zone.id])
 
-  const fetchSceneRules = async (sceneId: number) => {
+  const fetchSceneRules = useCallback(async (sceneId: number) => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/v1/scenes/${sceneId}/rules`)
       if (response.ok) {
         const data = await response.json()
         setSceneRules(data)
       }
-    } catch (err) {
-      console.error('Error fetching scene rules:', err)
+    } catch (error) {
+      console.error('Error fetching scene rules:', error)
     }
-  }
+  }, [])
 
   useEffect(() => {
     fetchScenes()
-  }, [zone.id, fetchScenes])
+  }, [fetchScenes])
 
-  useEffect(() => {
-    if (selectedScene) {
-      fetchSceneRules(selectedScene.id)
-    } else {
-      setSceneRules([])
-    }
-  }, [selectedScene])
-
-  const createScene = async () => {
-    if (!newSceneName.trim() || !newSceneSlug.trim()) {
-      setError('Nome e slug della scena sono obbligatori')
-      return
-    }
-
+  const visualizzaTest = async (scene: Scene) => {
     setLoading(true)
     setError(null)
     setSuccess(null)
 
     try {
-      const sceneData = {
-        zone_id: zone.id,
-        name: newSceneName,
-        slug: newSceneSlug,
-        settings: {
-          target_temperature: targetTemperature ? parseFloat(targetTemperature) : null,
-          target_humidity: targetHumidity ? parseFloat(targetHumidity) : null
-        },
-        is_active: false
-      }
-
-      const response = await fetch(`${API_BASE_URL}/api/v1/scenes/zone/${zone.id}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(sceneData)
-      })
-
-      if (response.ok) {
-        const newScene = await response.json()
-        setScenes([...scenes, newScene])
-        setSelectedScene(newScene)
-        setNewSceneName('')
-        setNewSceneSlug('')
-        setTargetTemperature('')
-        setTargetHumidity('')
-        setSuccess('Scena creata con successo!')
-        onSceneUpdate()
-      } else {
-        const errorData = await response.json()
-        setError(typeof errorData.detail === 'string' ? errorData.detail : 'Errore nella creazione della scena')
-      }
-    } catch {
-      setError('Errore di connessione durante la creazione della scena')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const createRule = async () => {
-    if (!selectedScene || !newRuleName.trim() || !ruleConditionValue.trim()) {
-      setError('Seleziona una scena e compila tutti i campi della regola')
-      return
-    }
-
-    setLoading(true)
-    setError(null)
-    setSuccess(null)
-
-    try {
-      const ruleData = {
-        name: newRuleName,
-        condition: {
-          type: ruleConditionType,
-          operator: ruleConditionOperator,
-          value: parseFloat(ruleConditionValue)
-        },
-        action: {
-          type: ruleActionType,
-          outlet_id: ruleActionType === 'outlet' ? parseInt(ruleActionOutlet) : null,
-          state: ruleActionState
-        },
-        priority: sceneRules.length + 1
-      }
-
-      const response = await fetch(`${API_BASE_URL}/api/v1/scenes/${selectedScene.id}/rules`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(ruleData)
-      })
-
-      if (response.ok) {
-        const newRule = await response.json()
-        setSceneRules([...sceneRules, newRule])
-        setNewRuleName('')
-        setRuleConditionValue('')
-        setRuleActionOutlet('')
-        setSuccess('Regola aggiunta con successo!')
-      } else {
-        const errorData = await response.json()
-        setError(errorData.detail || 'Errore nella creazione della regola')
-      }
-    } catch {
-      setError('Errore di connessione durante la creazione della regola')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const activateScene = async (scene: Scene) => {
-    setLoading(true)
-    setError(null)
-    setSuccess(null)
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/v1/scenes/${scene.id}/activate`, {
-        method: 'POST'
-      })
-
-      if (response.ok) {
-        await fetchScenes()
-        setSuccess(`Scena "${scene.name}" attivata!`)
-        onSceneUpdate()
-      } else {
-        const errorData = await response.json()
-        setError(errorData.detail || 'Errore nell\'attivazione della scena')
-      }
-    } catch {
-      setError('Errore di connessione durante l\'attivazione della scena')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const evaluateScene = async (scene: Scene) => {
-    setLoading(true)
-    setError(null)
-    setSuccess(null)
-
-    try {
+      await fetchSceneRules(scene.id)
+      setSelectedScene(scene)
+      
       const response = await fetch(`${API_BASE_URL}/api/v1/scenes/${scene.id}/evaluate`, {
         method: 'POST'
       })
 
       if (response.ok) {
         const result = await response.json()
-        setSuccess(`Regole valutate: ${result.executed_actions.length} azioni eseguite`)
+        setSuccess(`Test completato: ${result.message || 'Regole valutate con successo'}`)
       } else {
         const errorData = await response.json()
-        setError(errorData.detail || 'Errore nella valutazione delle regole')
+        setError(typeof errorData.detail === 'string' ? errorData.detail : 'Errore nella valutazione della scena')
       }
     } catch {
-      setError('Errore di connessione durante la valutazione delle regole')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const deleteRule = async (ruleId: number) => {
-    setLoading(true)
-    setError(null)
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/v1/scenes/rules/${ruleId}`, {
-        method: 'DELETE'
-      })
-
-      if (response.ok) {
-        setSceneRules(sceneRules.filter(rule => rule.id !== ruleId))
-        setSuccess('Regola eliminata con successo!')
-      } else {
-        const errorData = await response.json()
-        setError(typeof errorData.detail === 'string' ? errorData.detail : 'Errore nell\'eliminazione della regola')
-      }
-    } catch {
-      setError('Errore di connessione durante l\'eliminazione della regola')
+      setError('Errore di connessione durante il test della scena')
     } finally {
       setLoading(false)
     }
@@ -338,84 +166,21 @@ export default function SceneEditor({ zone, outlets, onSceneUpdate }: SceneEdito
         </Alert>
       )}
 
-      {/* Scene Creation */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Plus className="h-4 w-4" />
-            Crea Nuova Scena
-          </CardTitle>
-          <CardDescription>
-            Crea una nuova scena per la {zone.slug === 'serra' ? 'serra' : 'terrario'}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="scene-name">Nome Scena</Label>
-              <Input
-                id="scene-name"
-                value={newSceneName}
-                onChange={(e) => setNewSceneName(e.target.value)}
-                placeholder="es. Giorno Estate"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="scene-slug">Slug Scena</Label>
-              <Input
-                id="scene-slug"
-                value={newSceneSlug}
-                onChange={(e) => setNewSceneSlug(e.target.value)}
-                placeholder="es. giorno-estate"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="target-temp">Temperatura Target (°C)</Label>
-              <Input
-                id="target-temp"
-                type="number"
-                value={targetTemperature}
-                onChange={(e) => setTargetTemperature(e.target.value)}
-                placeholder="es. 25"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="target-humidity">Umidità Target (%)</Label>
-              <Input
-                id="target-humidity"
-                type="number"
-                value={targetHumidity}
-                onChange={(e) => setTargetHumidity(e.target.value)}
-                placeholder="es. 60"
-              />
-            </div>
-          </div>
-
-          <Button onClick={createScene} disabled={loading}>
-            <Save className="h-4 w-4 mr-2" />
-            Crea Scena
-          </Button>
-        </CardContent>
-      </Card>
-
-      {/* Scene List */}
+      {/* Scene Summary */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Settings className="h-4 w-4" />
-            Scene Esistenti
+            Riepilogo Scene
           </CardTitle>
           <CardDescription>
-            Gestisci le scene create per la {zone.slug === 'serra' ? 'serra' : 'terrario'}
+            Scene create nel mapping per la {zone.slug === 'serra' ? 'serra' : 'terrario'}
           </CardDescription>
         </CardHeader>
         <CardContent>
           {scenes.length === 0 ? (
             <div className="text-sm text-gray-600">
-              Nessuna scena configurata. Crea la tua prima scena sopra.
+              Nessuna scena configurata. Vai al tab Mapping per creare una scena.
             </div>
           ) : (
             <div className="space-y-3">
@@ -434,25 +199,10 @@ export default function SceneEditor({ zone, outlets, onSceneUpdate }: SceneEdito
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => setSelectedScene(scene)}
+                      onClick={() => visualizzaTest(scene)}
+                      disabled={loading}
                     >
-                      Modifica
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => activateScene(scene)}
-                      disabled={loading || scene.is_active}
-                    >
-                      Attiva
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => evaluateScene(scene)}
-                      disabled={loading || !scene.is_active}
-                    >
-                      <Play className="h-4 w-4" />
+                      Visualizza Test
                     </Button>
                     <Button
                       variant="outline"
@@ -461,7 +211,7 @@ export default function SceneEditor({ zone, outlets, onSceneUpdate }: SceneEdito
                       disabled={loading}
                       className="text-red-600 hover:bg-red-50"
                     >
-                      <Trash2 className="h-4 w-4" />
+                      Elimina
                     </Button>
                   </div>
                 </div>
@@ -471,133 +221,70 @@ export default function SceneEditor({ zone, outlets, onSceneUpdate }: SceneEdito
         </CardContent>
       </Card>
 
-      {/* Rule Editor */}
+      {/* Scene Details */}
       {selectedScene && (
         <Card>
           <CardHeader>
-            <CardTitle>Editor Regole - {selectedScene.name}</CardTitle>
+            <CardTitle>Dettagli Scena - {selectedScene.name}</CardTitle>
             <CardDescription>
-              Configura le regole di automazione per questa scena
+              Informazioni sulla scena selezionata
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-6">
-            {/* Add New Rule */}
-            <div className="space-y-4 p-4 border rounded-lg bg-gray-50">
-              <h4 className="font-medium">Aggiungi Nuova Regola</h4>
-              
-              <div className="space-y-2">
-                <Label htmlFor="rule-name">Nome Regola</Label>
-                <Input
-                  id="rule-name"
-                  value={newRuleName}
-                  onChange={(e) => setNewRuleName(e.target.value)}
-                  placeholder="es. Accendi riscaldamento se freddo"
-                />
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label className="text-sm font-medium">Nome</Label>
+                <div className="text-sm text-gray-600">{selectedScene.name}</div>
               </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label>Condizione</Label>
-                  <Select value={ruleConditionType} onValueChange={setRuleConditionType}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="temperature">Temperatura</SelectItem>
-                      <SelectItem value="humidity">Umidità</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Operatore</Label>
-                  <Select value={ruleConditionOperator} onValueChange={setRuleConditionOperator}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value=">">Maggiore di</SelectItem>
-                      <SelectItem value="<">Minore di</SelectItem>
-                      <SelectItem value=">=">Maggiore o uguale</SelectItem>
-                      <SelectItem value="<=">Minore o uguale</SelectItem>
-                      <SelectItem value="==">Uguale a</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Valore</Label>
-                  <Input
-                    type="number"
-                    value={ruleConditionValue}
-                    onChange={(e) => setRuleConditionValue(e.target.value)}
-                    placeholder="es. 20"
-                  />
+              <div>
+                <Label className="text-sm font-medium">Slug</Label>
+                <div className="text-sm text-gray-600">{selectedScene.slug}</div>
+              </div>
+              <div>
+                <Label className="text-sm font-medium">Stato</Label>
+                <Badge variant={selectedScene.is_active ? "default" : "secondary"}>
+                  {selectedScene.is_active ? "Attiva" : "Inattiva"}
+                </Badge>
+              </div>
+              <div>
+                <Label className="text-sm font-medium">Creata</Label>
+                <div className="text-sm text-gray-600">
+                  {new Date(selectedScene.created_at).toLocaleDateString('it-IT')}
                 </div>
               </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Azione - Presa</Label>
-                  <Select value={ruleActionOutlet} onValueChange={setRuleActionOutlet}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Seleziona presa" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {outlets.map((outlet) => (
-                        <SelectItem key={outlet.id} value={outlet.id.toString()}>
-                          {outlet.custom_name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Stato</Label>
-                  <div className="flex items-center space-x-2">
-                    <Switch
-                      checked={ruleActionState}
-                      onCheckedChange={setRuleActionState}
-                    />
-                    <span className="text-sm">
-                      {ruleActionState ? 'Accendi' : 'Spegni'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <Button onClick={createRule} disabled={loading}>
-                <Plus className="h-4 w-4 mr-2" />
-                Aggiungi Regola
-              </Button>
             </div>
+            
+            {selectedScene.settings && (
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Impostazioni</Label>
+                <div className="text-sm text-gray-600 bg-gray-50 p-3 rounded">
+                  {selectedScene.settings.temperature_target && (
+                    <div>Temperatura Target: {selectedScene.settings.temperature_target}°C</div>
+                  )}
+                  {selectedScene.settings.humidity_target && (
+                    <div>Umidità Target: {selectedScene.settings.humidity_target}%</div>
+                  )}
+                </div>
+              </div>
+            )}
 
-            {/* Existing Rules */}
             <div className="space-y-3">
-              <h4 className="font-medium">Regole Esistenti</h4>
+              <Label className="text-sm font-medium">Regole Associate</Label>
               {sceneRules.length === 0 ? (
                 <div className="text-sm text-gray-600">
                   Nessuna regola configurata per questa scena.
                 </div>
               ) : (
                 sceneRules.map((rule) => (
-                  <div key={rule.id} className="flex items-center justify-between p-3 border rounded-lg">
-                    <div className="flex-1">
-                      <div className="font-medium">{rule.name}</div>
-                      <div className="text-sm text-gray-600">
-                        Se {String(rule.condition.type)} {String(rule.condition.operator)} {String(rule.condition.value)} → {' '}
-                        {rule.action.type === 'outlet' ? 
-                          `${rule.action.state ? 'Accendi' : 'Spegni'} presa ${rule.action.outlet_id}` : 
-                          'Azione personalizzata'
-                        }
-                      </div>
+                  <div key={rule.id} className="p-3 border rounded-lg bg-gray-50">
+                    <div className="font-medium text-sm">{rule.name}</div>
+                    <div className="text-sm text-gray-600">
+                      Se {String(rule.condition.type)} {String(rule.condition.operator)} {String(rule.condition.value)} → {' '}
+                      {rule.action.type === 'outlet' ? 
+                        `${rule.action.state ? 'Accendi' : 'Spegni'} presa ${rule.action.outlet_id}` : 
+                        'Azione personalizzata'
+                      }
                     </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => deleteRule(rule.id)}
-                      disabled={loading}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
                   </div>
                 ))
               )}
