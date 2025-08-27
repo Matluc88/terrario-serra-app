@@ -154,12 +154,12 @@ async def get_zone_latest_readings(zone_id: int, db: Session = Depends(get_db)):
     for sensor in sensors:
         latest_temp = db.query(Reading).filter(
             Reading.sensor_id == sensor.id,
-            Reading.reading_type == "temperature"
+            Reading.unit == "°C"
         ).order_by(Reading.observed_at.desc()).first()
         
         latest_humidity = db.query(Reading).filter(
             Reading.sensor_id == sensor.id,
-            Reading.reading_type == "humidity"
+            Reading.unit == "%"
         ).order_by(Reading.observed_at.desc()).first()
         
         sensor_data = {

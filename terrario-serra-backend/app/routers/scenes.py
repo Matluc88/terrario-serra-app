@@ -191,6 +191,23 @@ async def activate_scene(scene_id: int, db: Session = Depends(get_db)):
 @router.post("/{scene_id}/evaluate")
 async def evaluate_scene_rules(scene_id: int, db: Session = Depends(get_db)):
     """Evaluate scene rules and execute actions"""
+    from app.services.scene_automation import process_scene_rules
+    
+    try:
+        rules_exist = db.query(SceneRule).filter(SceneRule.scene_id == scene_id).first()
+        
+        if rules_exist:
+            result = process_scene_rules(scene_id, db)
+            return result
+        else:
+            return await evaluate_legacy_scene_rules(scene_id, db)
+            
+    except Exception as e:
+        logger.error(f"Error evaluating scene rules: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+async def evaluate_legacy_scene_rules(scene_id: int, db: Session = Depends(get_db)):
+    """Legacy scene evaluation using scene.settings (backward compatibility)"""
     from app.models.device import Device, Outlet
     from app.providers.tuya_provider import TuyaProvider
     import os
