@@ -24,14 +24,9 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://terrario-serra-app-1.onrender.com",  # Production frontend
-        "http://localhost:5173",  # Local Vite dev server
-        "http://localhost:3000",  # Alternative local dev
-        "*"  # Fallback for all origins
-    ],
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["*"]
 )
