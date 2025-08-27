@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -84,10 +84,10 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
   const [scenes, setScenes] = useState<Scene[]>([])
   const [selectedScene, setSelectedScene] = useState<Scene | null>(null)
   const [runningAutomation, setRunningAutomation] = useState(false)
+  const [, setAutomationSession] = useState<any | null>(null)
   const [automationTimer, setAutomationTimer] = useState<number | null>(null)
   const [automationStartTime, setAutomationStartTime] = useState<Date | null>(null)
   const AUTOMATION_DURATION_MINUTES = 15
-  const timerIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
   const fetchDevicesAndOutlets = useCallback(async () => {
     try {
@@ -246,37 +246,53 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
     }
   }, [zone.id])
 
-  const startAutomationTimer = () => {
-    if (timerIntervalRef.current) {
-      clearInterval(timerIntervalRef.current)
-    }
-    
-    const startTime = new Date()
-    setAutomationStartTime(startTime)
-    setAutomationTimer(AUTOMATION_DURATION_MINUTES * 60)
-    
-    timerIntervalRef.current = setInterval(() => {
-      setAutomationTimer(prev => {
-        if (prev === null || prev <= 1) {
-          if (timerIntervalRef.current) {
-            clearInterval(timerIntervalRef.current)
-            timerIntervalRef.current = null
-          }
+  const fetchAutomationStatus = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/v1/automation/zone/${zone.id}/status`)
+      if (response.ok) {
+        const data = await response.json()
+        if (data.has_active_session && data.active_session) {
+          setAutomationSession(data.active_session)
+          setAutomationTimer(data.active_session.time_remaining_seconds)
+          setAutomationStartTime(new Date(data.active_session.started_at))
+          
+          const scene = scenes.find(s => s.id === data.active_session.scene_id)
+          if (scene) setSelectedScene(scene)
+        } else {
+          setAutomationSession(null)
+          setAutomationTimer(null)
           setAutomationStartTime(null)
-          return null
         }
-        return prev - 1
-      })
-    }, 1000)
-  }
-
-  const stopAutomationTimer = () => {
-    if (timerIntervalRef.current) {
-      clearInterval(timerIntervalRef.current)
-      timerIntervalRef.current = null
+      }
+    } catch (err) {
+      console.error('Error fetching automation status:', err)
     }
-    setAutomationTimer(null)
-    setAutomationStartTime(null)
+  }, [zone.id, scenes])
+
+  const stopAutomation = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/v1/automation/zone/${zone.id}/stop`, {
+        method: 'POST'
+      })
+      
+      if (response.ok) {
+        setAutomationSession(null)
+        setAutomationTimer(null)
+        setAutomationStartTime(null)
+        onZoneUpdate()
+        toast({
+          title: "Successo",
+          description: "Automazione fermata"
+        })
+      }
+    } catch (err) {
+      console.error('Error stopping automation:', err)
+      toast({
+        title: "Errore",
+        description: "Errore nel fermare l'automazione",
+        variant: "destructive"
+      })
+    }
   }
 
   const formatTimeRemaining = (seconds: number): string => {
@@ -289,30 +305,41 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
     if (!selectedScene) return
     
     setRunningAutomation(true)
-    startAutomationTimer()
     
     try {
-      const response = await fetch(`${API_BASE_URL}/api/v1/scenes/${selectedScene.id}/evaluate`, {
-        method: 'POST'
+      const response = await fetch(`${API_BASE_URL}/api/v1/automation/zone/${zone.id}/start`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          scene_id: selectedScene.id,
+          duration_minutes: AUTOMATION_DURATION_MINUTES
+        })
       })
       
       if (response.ok) {
+        const sessionData = await response.json()
+        setAutomationSession(sessionData)
+        setAutomationTimer(sessionData.time_remaining_seconds)
+        setAutomationStartTime(new Date(sessionData.started_at))
+        
         await fetchDevicesAndOutlets()
+        onZoneUpdate()
         toast({
           title: "Successo",
           description: `Automazione "${selectedScene.name}" avviata - durata: ${AUTOMATION_DURATION_MINUTES} minuti`
         })
       } else {
-        throw new Error('Errore nell\'esecuzione automazione')
+        throw new Error('Errore nell\'avvio automazione')
       }
     } catch (err) {
-      console.error('Error running automation:', err)
+      console.error('Error starting automation:', err)
       toast({
         title: "Errore",
-        description: "Errore nell'esecuzione dell'automazione",
+        description: "Errore nell'avvio dell'automazione",
         variant: "destructive"
       })
-      stopAutomationTimer()
     } finally {
       setRunningAutomation(false)
     }
@@ -328,12 +355,52 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
   }, [zone.id, fetchDevicesAndOutlets, fetchSensorData, fetchScenes])
 
   useEffect(() => {
-    return () => {
-      if (timerIntervalRef.current) {
-        clearInterval(timerIntervalRef.current)
-      }
+    if (scenes.length > 0) {
+      fetchAutomationStatus()
     }
-  }, [])
+  }, [scenes, fetchAutomationStatus])
+
+  useEffect(() => {
+    if (automationTimer !== null && automationTimer > 0) {
+      const interval = setInterval(() => {
+        setAutomationTimer(prev => {
+          if (prev === null || prev <= 1) {
+            setAutomationSession(null)
+            setAutomationStartTime(null)
+            onZoneUpdate()
+            return null
+          }
+          return prev - 1
+        })
+      }, 1000)
+      
+      return () => clearInterval(interval)
+    }
+  }, [automationTimer, onZoneUpdate])
+
+  useEffect(() => {
+    if (scenes.length > 0) {
+      fetchAutomationStatus()
+    }
+  }, [scenes, fetchAutomationStatus])
+
+  useEffect(() => {
+    if (automationTimer !== null && automationTimer > 0) {
+      const interval = setInterval(() => {
+        setAutomationTimer(prev => {
+          if (prev === null || prev <= 1) {
+            setAutomationSession(null)
+            setAutomationStartTime(null)
+            return null
+          }
+          return prev - 1
+        })
+      }, 1000)
+      
+      return () => clearInterval(interval)
+    }
+  }, [automationTimer])
+
 
   const formatTimestamp = (timestamp: string | null) => {
     if (!timestamp) return '--'
@@ -592,7 +659,7 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
                       <Button 
                         variant="outline" 
                         size="sm" 
-                        onClick={stopAutomationTimer}
+                        onClick={stopAutomation}
                         className="text-red-600 border-red-200 hover:bg-red-50"
                       >
                         Ferma

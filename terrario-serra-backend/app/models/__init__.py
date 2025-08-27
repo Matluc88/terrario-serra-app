@@ -7,6 +7,7 @@ from .override import Override
 from .settings import Setting
 from .audit import AuditLog
 from .kill_switch import KillSwitch
+from .automation_session import AutomationSession
 
 __all__ = [
     "Base",
@@ -20,5 +21,6 @@ __all__ = [
     "Override",
     "Setting",
     "AuditLog",
-    "KillSwitch"
+    "KillSwitch",
+    "AutomationSession"
 ]

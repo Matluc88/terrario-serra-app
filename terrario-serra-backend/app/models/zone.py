@@ -19,3 +19,4 @@ class Zone(Base):
     sensors = relationship("Sensor", back_populates="zone")
     scenes = relationship("Scene", back_populates="zone")
     overrides = relationship("Override", back_populates="zone")
+    automation_sessions = relationship("AutomationSession", back_populates="zone")
