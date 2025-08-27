@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List, Dict, Any
 import os
 import logging
+from datetime import datetime, timedelta
 
 from app.database import get_db
 from app.models.device import Device, Outlet
@@ -111,9 +112,10 @@ async def switch_outlet(
     device_id: int, 
     outlet_id: int, 
     state: bool,
+    override_minutes: int = 30,
     db: Session = Depends(get_db)
 ):
-    """Switch an outlet on/off"""
+    """Switch an outlet on/off with configurable manual override tracking"""
     device = db.query(Device).filter(Device.id == device_id).first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
@@ -127,6 +129,11 @@ async def switch_outlet(
     
     if not outlet.enabled:
         raise HTTPException(status_code=400, detail="Outlet is disabled")
+    
+    if hasattr(outlet, 'manual_override'):
+        outlet.manual_override = True
+    if hasattr(outlet, 'manual_override_until'):
+        outlet.manual_override_until = datetime.utcnow() + timedelta(minutes=override_minutes)
     
     try:
         tuya = get_tuya_provider()
@@ -144,6 +151,8 @@ async def switch_outlet(
             "outlet_id": outlet_id,
             "channel": outlet.channel,
             "state": state,
+            "manual_override": True,
+            "override_until": outlet.manual_override_until if hasattr(outlet, 'manual_override_until') else None,
             "result": result
         }
         

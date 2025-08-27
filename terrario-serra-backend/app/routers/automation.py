@@ -115,7 +115,7 @@ async def start_automation_session(
     
     from app.services.scene_automation import process_scene_rules
     try:
-        result = process_scene_rules(session_data.scene_id, db)
+        result = await process_scene_rules(session_data.scene_id, db)
         new_session.last_evaluation_at = datetime.utcnow()
         db.commit()
         

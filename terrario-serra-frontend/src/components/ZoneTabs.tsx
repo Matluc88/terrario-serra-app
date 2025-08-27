@@ -185,21 +185,26 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
 
   const fetchSensorData = useCallback(async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/v1/sensors/zone/${zone.id}/readings`)
+      const response = await fetch(`${API_BASE_URL}/api/v1/sensors/zone/${zone.id}/latest`)
       const data = await response.json()
-      if (data.success && data.readings) {
-        const transformedData = data.readings.map((reading: { sensor_id: number; sensor_name: string; readings?: { temperature?: number; humidity?: number }; timestamp?: string }) => ({
-          sensor_id: reading.sensor_id,
-          sensor_name: reading.sensor_name,
+      if (data.success && data.sensors) {
+        const transformedData = data.sensors.map((sensor: { 
+          sensor_id: number; 
+          sensor_name: string; 
+          temperature: { value: number | null; unit: string | null; timestamp: string | null };
+          humidity: { value: number | null; unit: string | null; timestamp: string | null };
+        }) => ({
+          sensor_id: sensor.sensor_id,
+          sensor_name: sensor.sensor_name,
           temperature: {
-            value: reading.readings?.temperature || null,
-            unit: reading.readings?.temperature ? '°C' : null,
-            timestamp: reading.timestamp || null
+            value: sensor.temperature?.value || null,
+            unit: sensor.temperature?.unit || null,
+            timestamp: sensor.temperature?.timestamp || null
           },
           humidity: {
-            value: reading.readings?.humidity || null,
-            unit: reading.readings?.humidity ? '%' : null,
-            timestamp: reading.timestamp || null
+            value: sensor.humidity?.value || null,
+            unit: sensor.humidity?.unit || null,
+            timestamp: sensor.humidity?.timestamp || null
           }
         }))
         setSensorData(transformedData)
@@ -507,55 +512,99 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
   }
 
   const getOutletExplanation = (outlet: Outlet) => {
+    console.log('getOutletExplanation called:', { 
+      sensorDataLength: sensorData.length, 
+      activeScene: !!activeScene,
+      outletName: outlet.custom_name,
+      sensorData: sensorData,
+      activeSceneSettings: activeScene?.settings
+    })
+    
     if (!sensorData.length || !activeScene) {
+      console.log('Returning static label - missing data')
       return outlet.last_state ? "Acceso" : "Spento"
     }
 
-    const currentTemp = sensorData[0]?.temperature?.value
-    const currentHumidity = sensorData[0]?.humidity?.value
+    let currentTemp: number | null = null
+    let currentHumidity: number | null = null
+    let tempTimestamp: string | null = null
+    let humidityTimestamp: string | null = null
+    
+    for (const sensor of sensorData) {
+      if (sensor.temperature?.value !== null && currentTemp === null) {
+        currentTemp = sensor.temperature.value
+        tempTimestamp = sensor.temperature.timestamp
+      }
+      if (sensor.humidity?.value !== null && currentHumidity === null) {
+        currentHumidity = sensor.humidity.value
+        humidityTimestamp = sensor.humidity.timestamp
+      }
+    }
+    
+    console.log('Aggregated sensor data:', {
+      currentTemp,
+      currentHumidity,
+      tempTimestamp,
+      humidityTimestamp,
+      allSensors: sensorData.map(s => ({ 
+        name: s.sensor_name, 
+        temp: s.temperature?.value, 
+        humidity: s.humidity?.value 
+      }))
+    })
     
     if (currentTemp === null || currentHumidity === null) {
+      console.log('Missing sensor values after aggregation, returning static label')
       return outlet.last_state ? "Acceso" : "Spento"
     }
 
     const tempRange = activeScene.settings?.temperature_range as { min?: number; max?: number } | undefined
     const humidityRange = activeScene.settings?.humidity_range as { min?: number; max?: number } | undefined
+    
+    console.log('Scene ranges:', {
+      tempRange,
+      humidityRange,
+      activeSceneSettings: activeScene.settings
+    })
+    
+    const lastUpdate = tempTimestamp || humidityTimestamp
+    const timestamp = lastUpdate ? new Date(lastUpdate).toLocaleTimeString('it-IT') : '--'
 
     const deviceName = outlet.custom_name?.toLowerCase() || ''
     
     if (deviceName.includes('condizionatore') || deviceName.includes('raffrescatore')) {
       if (tempRange?.max && currentTemp <= tempRange.max) {
-        return "Spento - Temperatura nella soglia ottimale"
+        return `Spento - Temperatura OK (${currentTemp}°C ≤ ${tempRange.max}°C) - ${timestamp}`
       } else if (tempRange?.max && currentTemp > tempRange.max) {
-        return "Acceso - Temperatura sopra soglia massima"
+        return `Acceso - Temperatura alta (${currentTemp}°C > ${tempRange.max}°C) - ${timestamp}`
       }
     }
     
     if (deviceName.includes('riscaldatore') || deviceName.includes('termoriscaldatore')) {
       if (tempRange?.min && currentTemp >= tempRange.min) {
-        return "Spento - Temperatura nella soglia ottimale"
+        return `Spento - Temperatura OK (${currentTemp}°C ≥ ${tempRange.min}°C) - ${timestamp}`
       } else if (tempRange?.min && currentTemp < tempRange.min) {
-        return "Acceso - Temperatura sotto soglia minima"
+        return `Acceso - Temperatura bassa (${currentTemp}°C < ${tempRange.min}°C) - ${timestamp}`
       }
     }
     
     if (deviceName.includes('umidificatore')) {
       if (humidityRange?.min && currentHumidity >= humidityRange.min) {
-        return "Spento - Umidità nella soglia corretta"
+        return `Spento - Umidità OK (${currentHumidity}% ≥ ${humidityRange.min}%) - ${timestamp}`
       } else if (humidityRange?.min && currentHumidity < humidityRange.min) {
-        return "Acceso - Umidità sotto soglia minima"
+        return `Acceso - Umidità bassa (${currentHumidity}% < ${humidityRange.min}%) - ${timestamp}`
       }
     }
     
     if (deviceName.includes('deumidificatore')) {
       if (humidityRange?.max && currentHumidity <= humidityRange.max) {
-        return "Spento - Umidità nella soglia corretta"
+        return `Spento - Umidità OK (${currentHumidity}% ≤ ${humidityRange.max}%) - ${timestamp}`
       } else if (humidityRange?.max && currentHumidity > humidityRange.max) {
-        return "Acceso - Umidità sopra soglia massima"
+        return `Acceso - Umidità alta (${currentHumidity}% > ${humidityRange.max}%) - ${timestamp}`
       }
     }
 
-    return outlet.last_state ? "Acceso" : "Spento"
+    return outlet.last_state ? `Acceso - ${timestamp}` : `Spento - ${timestamp}`
   }
 
   const saveSceneChanges = async () => {
