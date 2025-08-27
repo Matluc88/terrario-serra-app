@@ -6,6 +6,8 @@ import KillSwitch from './components/KillSwitch'
 import ZoneTabs from './components/ZoneTabs'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+console.log('DEBUG: VITE_API_BASE_URL =', import.meta.env.VITE_API_BASE_URL)
+console.log('DEBUG: Final API_BASE_URL =', API_BASE_URL)
 
 interface Zone {
   id: number
