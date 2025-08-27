@@ -16,12 +16,9 @@ router = APIRouter(prefix="/api/v1/devices", tags=["devices"])
 
 def get_tuya_provider() -> TuyaProvider:
     """Get configured Tuya provider instance"""
-    access_id = os.getenv("TUYA_ACCESS_KEY")
-    access_secret = os.getenv("TUYA_SECRET_KEY")
+    access_id = os.getenv("TUYA_ACCESS_KEY", "")
+    access_secret = os.getenv("TUYA_SECRET_KEY", "")
     region = os.getenv("TUYA_REGION", "eu")
-    
-    if not access_id or not access_secret:
-        raise HTTPException(status_code=500, detail="Tuya credentials not configured")
     
     return TuyaProvider(access_id, access_secret, region)
 
