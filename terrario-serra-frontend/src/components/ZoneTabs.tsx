@@ -9,6 +9,7 @@ import { Settings, Play, Hand, Power, Thermometer, Droplets, AlertTriangle, Refr
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
 import MappingInterface from './MappingInterface'
+import SceneEditor from './SceneEditor'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
 
@@ -413,7 +414,7 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
 
   return (
     <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-      <TabsList className="grid w-full grid-cols-3">
+      <TabsList className="grid w-full grid-cols-4">
         <TabsTrigger value="manual" className="flex items-center gap-2">
           <Hand className="h-4 w-4" />
           Manuale
@@ -421,6 +422,10 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
         <TabsTrigger value="mapping" className="flex items-center gap-2">
           <Settings className="h-4 w-4" />
           Mapping
+        </TabsTrigger>
+        <TabsTrigger value="scenes" className="flex items-center gap-2">
+          <Settings className="h-4 w-4" />
+          Scene
         </TabsTrigger>
         <TabsTrigger value="automatic" className="flex items-center gap-2">
           <Play className="h-4 w-4" />
@@ -583,6 +588,18 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
         />
       </TabsContent>
 
+      <TabsContent value="scenes" className="space-y-4">
+        <SceneEditor 
+          zone={zone} 
+          outlets={outlets} 
+          onSceneUpdate={() => {
+            fetchDevicesAndOutlets()
+            fetchScenes()
+            onZoneUpdate()
+          }}
+        />
+      </TabsContent>
+
       <TabsContent value="automatic" className="space-y-4">
         <div className="grid gap-4">
           <Card>
@@ -610,7 +627,7 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
                   <h4 className="font-medium">Scene Disponibili:</h4>
                   {scenes.length === 0 ? (
                     <div className="text-sm text-gray-600">
-                      Nessuna scena configurata. Vai al tab Mapping per creare una scena.
+                      Nessuna scena configurata. Vai al tab Scene per creare una scena.
                     </div>
                   ) : (
                     <Select value={selectedScene?.id.toString() || ''} onValueChange={(value: string) => {

@@ -129,6 +129,7 @@ export default function SceneEditor({ zone, outlets, onSceneUpdate }: SceneEdito
 
     try {
       const sceneData = {
+        zone_id: zone.id,
         name: newSceneName,
         slug: newSceneSlug,
         settings: {
@@ -158,7 +159,7 @@ export default function SceneEditor({ zone, outlets, onSceneUpdate }: SceneEdito
         onSceneUpdate()
       } else {
         const errorData = await response.json()
-        setError(errorData.detail || 'Errore nella creazione della scena')
+        setError(typeof errorData.detail === 'string' ? errorData.detail : 'Errore nella creazione della scena')
       }
     } catch {
       setError('Errore di connessione durante la creazione della scena')
@@ -282,10 +283,41 @@ export default function SceneEditor({ zone, outlets, onSceneUpdate }: SceneEdito
         setSuccess('Regola eliminata con successo!')
       } else {
         const errorData = await response.json()
-        setError(errorData.detail || 'Errore nell\'eliminazione della regola')
+        setError(typeof errorData.detail === 'string' ? errorData.detail : 'Errore nell\'eliminazione della regola')
       }
     } catch {
       setError('Errore di connessione durante l\'eliminazione della regola')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const deleteScene = async (sceneId: number) => {
+    if (!confirm('Sei sicuro di voler eliminare questa scena? Questa azione non può essere annullata.')) {
+      return
+    }
+
+    setLoading(true)
+    setError(null)
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/v1/scenes/${sceneId}`, {
+        method: 'DELETE'
+      })
+
+      if (response.ok) {
+        setScenes(scenes.filter(scene => scene.id !== sceneId))
+        if (selectedScene?.id === sceneId) {
+          setSelectedScene(null)
+        }
+        setSuccess('Scena eliminata con successo!')
+        onSceneUpdate()
+      } else {
+        const errorData = await response.json()
+        setError(typeof errorData.detail === 'string' ? errorData.detail : 'Errore nell\'eliminazione della scena')
+      }
+    } catch {
+      setError('Errore di connessione durante l\'eliminazione della scena')
     } finally {
       setLoading(false)
     }
@@ -421,6 +453,15 @@ export default function SceneEditor({ zone, outlets, onSceneUpdate }: SceneEdito
                       disabled={loading || !scene.is_active}
                     >
                       <Play className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => deleteScene(scene.id)}
+                      disabled={loading}
+                      className="text-red-600 hover:bg-red-50"
+                    >
+                      <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
                 </div>
