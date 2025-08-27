@@ -758,14 +758,14 @@ export default function MappingInterface({ zone, outlets, onConfigUpdate }: Mapp
                   <div className="font-medium">Se T ≤ {tempMin}°C:</div>
                   <div className="mt-1">
                     <span className="text-green-600">Accendi: </span>
-                    {Object.entries(rules.tempLow.actions.on).filter(([_, active]) => active).map(([outletId]) => {
+                    {Object.entries(rules.tempLow.actions.on).filter(([, active]) => active).map(([outletId]) => {
                       const outlet = outlets.find(o => o.id === parseInt(outletId))
                       return outlet ? (outletConfigs[outlet.id]?.name || `Switch${outlets.indexOf(outlet) + 1}`) : ''
                     }).join(', ') || 'Nessuno'}
                   </div>
                   <div>
                     <span className="text-red-600">Spegni: </span>
-                    {Object.entries(rules.tempLow.actions.off).filter(([_, active]) => active).map(([outletId]) => {
+                    {Object.entries(rules.tempLow.actions.off).filter(([, active]) => active).map(([outletId]) => {
                       const outlet = outlets.find(o => o.id === parseInt(outletId))
                       return outlet ? (outletConfigs[outlet.id]?.name || `Switch${outlets.indexOf(outlet) + 1}`) : ''
                     }).join(', ') || 'Nessuno'}
@@ -775,14 +775,14 @@ export default function MappingInterface({ zone, outlets, onConfigUpdate }: Mapp
                   <div className="font-medium">Se T ≥ {tempMax}°C:</div>
                   <div className="mt-1">
                     <span className="text-green-600">Accendi: </span>
-                    {Object.entries(rules.tempHigh.actions.on).filter(([_, active]) => active).map(([outletId]) => {
+                    {Object.entries(rules.tempHigh.actions.on).filter(([, active]) => active).map(([outletId]) => {
                       const outlet = outlets.find(o => o.id === parseInt(outletId))
                       return outlet ? (outletConfigs[outlet.id]?.name || `Switch${outlets.indexOf(outlet) + 1}`) : ''
                     }).join(', ') || 'Nessuno'}
                   </div>
                   <div>
                     <span className="text-red-600">Spegni: </span>
-                    {Object.entries(rules.tempHigh.actions.off).filter(([_, active]) => active).map(([outletId]) => {
+                    {Object.entries(rules.tempHigh.actions.off).filter(([, active]) => active).map(([outletId]) => {
                       const outlet = outlets.find(o => o.id === parseInt(outletId))
                       return outlet ? (outletConfigs[outlet.id]?.name || `Switch${outlets.indexOf(outlet) + 1}`) : ''
                     }).join(', ') || 'Nessuno'}
@@ -798,14 +798,14 @@ export default function MappingInterface({ zone, outlets, onConfigUpdate }: Mapp
                   <div className="font-medium">Se UR ≤ {humidityMin}%:</div>
                   <div className="mt-1">
                     <span className="text-green-600">Accendi: </span>
-                    {Object.entries(rules.humidityLow.actions.on).filter(([_, active]) => active).map(([outletId]) => {
+                    {Object.entries(rules.humidityLow.actions.on).filter(([, active]) => active).map(([outletId]) => {
                       const outlet = outlets.find(o => o.id === parseInt(outletId))
                       return outlet ? (outletConfigs[outlet.id]?.name || `Switch${outlets.indexOf(outlet) + 1}`) : ''
                     }).join(', ') || 'Nessuno'}
                   </div>
                   <div>
                     <span className="text-red-600">Spegni: </span>
-                    {Object.entries(rules.humidityLow.actions.off).filter(([_, active]) => active).map(([outletId]) => {
+                    {Object.entries(rules.humidityLow.actions.off).filter(([, active]) => active).map(([outletId]) => {
                       const outlet = outlets.find(o => o.id === parseInt(outletId))
                       return outlet ? (outletConfigs[outlet.id]?.name || `Switch${outlets.indexOf(outlet) + 1}`) : ''
                     }).join(', ') || 'Nessuno'}
@@ -815,14 +815,14 @@ export default function MappingInterface({ zone, outlets, onConfigUpdate }: Mapp
                   <div className="font-medium">Se UR ≥ {humidityMax}%:</div>
                   <div className="mt-1">
                     <span className="text-green-600">Accendi: </span>
-                    {Object.entries(rules.humidityHigh.actions.on).filter(([_, active]) => active).map(([outletId]) => {
+                    {Object.entries(rules.humidityHigh.actions.on).filter(([, active]) => active).map(([outletId]) => {
                       const outlet = outlets.find(o => o.id === parseInt(outletId))
                       return outlet ? (outletConfigs[outlet.id]?.name || `Switch${outlets.indexOf(outlet) + 1}`) : ''
                     }).join(', ') || 'Nessuno'}
                   </div>
                   <div>
                     <span className="text-red-600">Spegni: </span>
-                    {Object.entries(rules.humidityHigh.actions.off).filter(([_, active]) => active).map(([outletId]) => {
+                    {Object.entries(rules.humidityHigh.actions.off).filter(([, active]) => active).map(([outletId]) => {
                       const outlet = outlets.find(o => o.id === parseInt(outletId))
                       return outlet ? (outletConfigs[outlet.id]?.name || `Switch${outlets.indexOf(outlet) + 1}`) : ''
                     }).join(', ') || 'Nessuno'}
