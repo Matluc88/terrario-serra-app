@@ -65,7 +65,7 @@ async def get_device_outlets(device_id: int, db: Session = Depends(get_db)):
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
     
-    outlets = db.query(Outlet).filter(Outlet.device_id == device_id).all()
+    outlets = db.query(Outlet).filter(Outlet.device_id == device_id).order_by(Outlet.channel).all()
     return {
         "device_id": device_id,
         "device_name": device.name,
@@ -169,7 +169,7 @@ async def switch_all_outlets(
         if not result.get("success"):
             raise HTTPException(status_code=500, detail=f"Failed to switch all outlets: {result.get('error')}")
         
-        outlets = db.query(Outlet).filter(Outlet.device_id == device_id).all()
+        outlets = db.query(Outlet).filter(Outlet.device_id == device_id).order_by(Outlet.channel).all()
         for outlet in outlets:
             if outlet.enabled:
                 outlet.last_state = state
