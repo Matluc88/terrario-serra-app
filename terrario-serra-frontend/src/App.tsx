@@ -5,9 +5,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import KillSwitch from './components/KillSwitch'
 import ZoneTabs from './components/ZoneTabs'
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (typeof __VITE_API_BASE_URL__ !== 'undefined' ? __VITE_API_BASE_URL__ : 'http://localhost:8000')
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (typeof globalThis !== 'undefined' && (globalThis as any).__VITE_API_BASE_URL__) || 'http://localhost:8000'
 console.log('DEBUG: VITE_API_BASE_URL =', import.meta.env.VITE_API_BASE_URL)
-console.log('DEBUG: __VITE_API_BASE_URL__ =', typeof __VITE_API_BASE_URL__ !== 'undefined' ? __VITE_API_BASE_URL__ : 'undefined')
+console.log('DEBUG: __VITE_API_BASE_URL__ =', typeof globalThis !== 'undefined' && (globalThis as any).__VITE_API_BASE_URL__ ? (globalThis as any).__VITE_API_BASE_URL__ : 'undefined')
 console.log('DEBUG: Final API_BASE_URL =', API_BASE_URL)
 
 interface Zone {
