@@ -67,7 +67,7 @@ export default function SceneEditor({ zone, onSceneUpdate }: SceneEditorProps) {
 
   const fetchScenes = useCallback(async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/v1/zones/${zone.id}/scenes`)
+      const response = await fetch(`${API_BASE_URL}/api/v1/scenes/zone/${zone.id}`)
       if (response.ok) {
         const data = await response.json()
         setScenes(data)
