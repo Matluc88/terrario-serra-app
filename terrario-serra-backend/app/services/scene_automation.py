@@ -106,11 +106,14 @@ async def execute_rule_action(action: Dict[str, Any], zone_id: int, db: Session)
             if outlet_id in outlet_map and should_turn_on:
                 outlet = outlet_map[outlet_id]
                 
-                if (hasattr(outlet, 'manual_override') and outlet.manual_override and 
-                    hasattr(outlet, 'manual_override_until') and outlet.manual_override_until and 
-                    outlet.manual_override_until > datetime.utcnow()):
-                    logger.info(f"Skipping {outlet.custom_name} - manual override active until {outlet.manual_override_until}")
-                    continue
+                try:
+                    if (getattr(outlet, 'manual_override', False) and 
+                        getattr(outlet, 'manual_override_until', None) and 
+                        outlet.manual_override_until > datetime.utcnow()):
+                        logger.info(f"Skipping {outlet.custom_name} - manual override active until {outlet.manual_override_until}")
+                        continue
+                except Exception as e:
+                    logger.debug(f"Manual override check failed for {outlet.custom_name}: {e}")
                 
                 device = outlet.device
                 
@@ -147,11 +150,14 @@ async def execute_rule_action(action: Dict[str, Any], zone_id: int, db: Session)
             if outlet_id in outlet_map and should_turn_off:
                 outlet = outlet_map[outlet_id]
                 
-                if (hasattr(outlet, 'manual_override') and outlet.manual_override and 
-                    hasattr(outlet, 'manual_override_until') and outlet.manual_override_until and 
-                    outlet.manual_override_until > datetime.utcnow()):
-                    logger.info(f"Skipping {outlet.custom_name} - manual override active until {outlet.manual_override_until}")
-                    continue
+                try:
+                    if (getattr(outlet, 'manual_override', False) and 
+                        getattr(outlet, 'manual_override_until', None) and 
+                        outlet.manual_override_until > datetime.utcnow()):
+                        logger.info(f"Skipping {outlet.custom_name} - manual override active until {outlet.manual_override_until}")
+                        continue
+                except Exception as e:
+                    logger.debug(f"Manual override check failed for {outlet.custom_name}: {e}")
                 
                 device = outlet.device
                 

@@ -130,10 +130,11 @@ async def switch_outlet(
     if not outlet.enabled:
         raise HTTPException(status_code=400, detail="Outlet is disabled")
     
-    if hasattr(outlet, 'manual_override'):
+    try:
         outlet.manual_override = True
-    if hasattr(outlet, 'manual_override_until'):
         outlet.manual_override_until = datetime.utcnow() + timedelta(minutes=override_minutes)
+    except Exception as e:
+        logger.warning(f"Manual override fields not available in database: {e}")
     
     try:
         tuya = get_tuya_provider()
@@ -151,8 +152,8 @@ async def switch_outlet(
             "outlet_id": outlet_id,
             "channel": outlet.channel,
             "state": state,
-            "manual_override": True,
-            "override_until": outlet.manual_override_until if hasattr(outlet, 'manual_override_until') else None,
+            "manual_override": getattr(outlet, 'manual_override', False),
+            "override_until": getattr(outlet, 'manual_override_until', None),
             "result": result
         }
         
