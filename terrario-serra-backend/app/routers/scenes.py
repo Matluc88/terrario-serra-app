@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any
 import logging
+from datetime import datetime
 
 from app.database import get_db
 from app.models.scene import Scene, SceneRule
@@ -197,7 +198,7 @@ async def evaluate_scene_rules(scene_id: int, db: Session = Depends(get_db)):
         rules_exist = db.query(SceneRule).filter(SceneRule.scene_id == scene_id).first()
         
         if rules_exist:
-            result = process_scene_rules(scene_id, db)
+            result = await process_scene_rules(scene_id, db)
             return result
         else:
             return await evaluate_legacy_scene_rules(scene_id, db)
@@ -210,6 +211,7 @@ async def evaluate_legacy_scene_rules(scene_id: int, db: Session = Depends(get_d
     """Legacy scene evaluation using scene.settings (backward compatibility)"""
     from app.models.device import Device, Outlet
     from app.providers.tuya_provider import TuyaProvider
+    from app.services.scene_automation import get_zone_sensor_data, evaluate_scene_condition
     import os
     
     scene = db.query(Scene).filter(Scene.id == scene_id).first()
@@ -218,6 +220,10 @@ async def evaluate_legacy_scene_rules(scene_id: int, db: Session = Depends(get_d
     
     if not scene.is_active:
         return {"success": False, "message": "Scene is not active"}
+    
+    sensor_data = get_zone_sensor_data(scene.zone_id, db)
+    if not sensor_data:
+        return {"success": False, "message": "No sensor data available"}
     
     access_id = os.getenv("TUYA_ACCESS_KEY")
     access_secret = os.getenv("TUYA_SECRET_KEY")
@@ -229,7 +235,7 @@ async def evaluate_legacy_scene_rules(scene_id: int, db: Session = Depends(get_d
         logger.info("Running in simulation mode - Tuya credentials not configured")
         tuya = None
     else:
-        tuya = TuyaProvider(access_id, access_secret, region)
+        tuya = TuyaProvider(str(access_id), str(access_secret), region)
     
     scene_rules = scene.settings.get("rules", {})
     outlet_configs = scene.settings.get("outlet_configs", {})
@@ -238,6 +244,22 @@ async def evaluate_legacy_scene_rules(scene_id: int, db: Session = Depends(get_d
     
     for rule_name, rule_data in scene_rules.items():
         try:
+            condition = {
+                "condition": rule_data.get("condition"),
+                "operator": rule_data.get("operator"), 
+                "value": rule_data.get("value")
+            }
+            
+            condition_met = evaluate_scene_condition(condition, sensor_data)
+            
+            if not condition_met:
+                executed_actions.append({
+                    "rule_name": rule_name,
+                    "condition_met": False,
+                    "executed": False
+                })
+                continue
+            
             actions_on = rule_data.get("actions", {}).get("on", {})
             
             for outlet_id, should_activate in actions_on.items():
@@ -277,8 +299,23 @@ async def evaluate_legacy_scene_rules(scene_id: int, db: Session = Depends(get_d
                         "rule_name": rule_name,
                         "outlet_id": outlet_id,
                         "outlet_name": outlet_name,
+                        "condition_met": True,
                         "executed": False,
                         "error": f"Outlet {outlet_name} not found"
+                    })
+                    continue
+                
+                if (hasattr(outlet, 'manual_override') and outlet.manual_override and 
+                    hasattr(outlet, 'manual_override_until') and outlet.manual_override_until and 
+                    outlet.manual_override_until > datetime.utcnow()):
+                    logger.info(f"Skipping {outlet_name} - manual override active until {outlet.manual_override_until}")
+                    executed_actions.append({
+                        "rule_name": rule_name,
+                        "outlet_id": outlet_id,
+                        "outlet_name": outlet_name,
+                        "condition_met": True,
+                        "executed": False,
+                        "skipped": "manual_override"
                     })
                     continue
                 
@@ -291,6 +328,7 @@ async def evaluate_legacy_scene_rules(scene_id: int, db: Session = Depends(get_d
                         "rule_name": rule_name,
                         "outlet_id": outlet_id,
                         "outlet_name": outlet_name,
+                        "condition_met": True,
                         "executed": True,
                         "state": True,
                         "result": result,
@@ -300,7 +338,10 @@ async def evaluate_legacy_scene_rules(scene_id: int, db: Session = Depends(get_d
                     outlet.last_state = True
                     db.commit()
                 else:
-                    result = await tuya.switch_outlet(device.provider_device_id, outlet.channel, True)
+                    if tuya is not None:
+                        result = await tuya.switch_outlet(device.provider_device_id, outlet.channel, True)
+                    else:
+                        result = {"success": False, "error": "TuyaProvider not initialized"}
                     
                     if result.get("success"):
                         logger.info(f"Successfully switched {outlet_name} ON for rule {rule_name}")
@@ -308,6 +349,7 @@ async def evaluate_legacy_scene_rules(scene_id: int, db: Session = Depends(get_d
                             "rule_name": rule_name,
                             "outlet_id": outlet_id,
                             "outlet_name": outlet_name,
+                            "condition_met": True,
                             "executed": True,
                             "state": True,
                             "result": result
@@ -321,6 +363,7 @@ async def evaluate_legacy_scene_rules(scene_id: int, db: Session = Depends(get_d
                             "rule_name": rule_name,
                             "outlet_id": outlet_id,
                             "outlet_name": outlet_name,
+                            "condition_met": True,
                             "executed": False,
                             "error": f"Switch command failed: {result.get('error')}",
                             "state": True
@@ -338,5 +381,7 @@ async def evaluate_legacy_scene_rules(scene_id: int, db: Session = Depends(get_d
         "success": True,
         "scene_id": scene_id,
         "scene_name": scene.name,
-        "executed_actions": executed_actions
+        "sensor_data": sensor_data,
+        "executed_actions": executed_actions,
+        "timestamp": datetime.utcnow().isoformat()
     }

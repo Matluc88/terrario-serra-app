@@ -5,6 +5,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy.orm import Session
 import logging
+import asyncio
 
 from app.database import SessionLocal, settings
 from app.models.scene import Scene
@@ -55,7 +56,8 @@ def evaluate_all_active_scenes():
         
         for session in active_sessions:
             try:
-                result = process_scene_rules(session.scene_id, db)
+                loop = asyncio.get_event_loop()
+                result = loop.run_until_complete(process_scene_rules(session.scene_id, db))
                 session.last_evaluation_at = current_time
                 
                 if result.get("success"):
@@ -73,7 +75,8 @@ def evaluate_all_active_scenes():
         for scene in standalone_scenes:
             if scene.id not in session_scene_ids:
                 try:
-                    result = process_scene_rules(scene.id, db)
+                    loop = asyncio.get_event_loop()
+                    result = loop.run_until_complete(process_scene_rules(scene.id, db))
                     if result.get("success"):
                         logger.info(f"Evaluated standalone scene {scene.name}: {len(result.get('executed_actions', []))} actions")
                     else:

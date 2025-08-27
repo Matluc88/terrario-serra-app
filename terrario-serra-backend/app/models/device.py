@@ -28,6 +28,8 @@ class Outlet(Base):
     custom_name = Column(String)  # User-defined name
     enabled = Column(Boolean, default=True)
     last_state = Column(Boolean, default=False)
+    manual_override = Column(Boolean, default=False)
+    manual_override_until = Column(DateTime, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
