@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -84,6 +84,10 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
   const [scenes, setScenes] = useState<Scene[]>([])
   const [selectedScene, setSelectedScene] = useState<Scene | null>(null)
   const [runningAutomation, setRunningAutomation] = useState(false)
+  const [automationTimer, setAutomationTimer] = useState<number | null>(null)
+  const [automationStartTime, setAutomationStartTime] = useState<Date | null>(null)
+  const AUTOMATION_DURATION_MINUTES = 15
+  const timerIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
   const fetchDevicesAndOutlets = useCallback(async () => {
     try {
@@ -242,10 +246,51 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
     }
   }, [zone.id])
 
+  const startAutomationTimer = () => {
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current)
+    }
+    
+    const startTime = new Date()
+    setAutomationStartTime(startTime)
+    setAutomationTimer(AUTOMATION_DURATION_MINUTES * 60)
+    
+    timerIntervalRef.current = setInterval(() => {
+      setAutomationTimer(prev => {
+        if (prev === null || prev <= 1) {
+          if (timerIntervalRef.current) {
+            clearInterval(timerIntervalRef.current)
+            timerIntervalRef.current = null
+          }
+          setAutomationStartTime(null)
+          return null
+        }
+        return prev - 1
+      })
+    }, 1000)
+  }
+
+  const stopAutomationTimer = () => {
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current)
+      timerIntervalRef.current = null
+    }
+    setAutomationTimer(null)
+    setAutomationStartTime(null)
+  }
+
+  const formatTimeRemaining = (seconds: number): string => {
+    const minutes = Math.floor(seconds / 60)
+    const remainingSeconds = seconds % 60
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
+  }
+
   const runAutomation = async () => {
     if (!selectedScene) return
     
     setRunningAutomation(true)
+    startAutomationTimer()
+    
     try {
       const response = await fetch(`${API_BASE_URL}/api/v1/scenes/${selectedScene.id}/evaluate`, {
         method: 'POST'
@@ -255,7 +300,7 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
         await fetchDevicesAndOutlets()
         toast({
           title: "Successo",
-          description: `Automazione "${selectedScene.name}" eseguita`
+          description: `Automazione "${selectedScene.name}" avviata - durata: ${AUTOMATION_DURATION_MINUTES} minuti`
         })
       } else {
         throw new Error('Errore nell\'esecuzione automazione')
@@ -267,6 +312,7 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
         description: "Errore nell'esecuzione dell'automazione",
         variant: "destructive"
       })
+      stopAutomationTimer()
     } finally {
       setRunningAutomation(false)
     }
@@ -280,6 +326,14 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
     const interval = setInterval(fetchSensorData, 1800000)
     return () => clearInterval(interval)
   }, [zone.id, fetchDevicesAndOutlets, fetchSensorData, fetchScenes])
+
+  useEffect(() => {
+    return () => {
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current)
+      }
+    }
+  }, [])
 
   const formatTimestamp = (timestamp: string | null) => {
     if (!timestamp) return '--'
@@ -478,8 +532,10 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium">Stato Automazione:</span>
-                  <Badge variant={zone.mode === 'automatic' ? 'default' : 'secondary'}>
-                    {zone.mode === 'automatic' ? 'Attiva' : 'Inattiva'}
+                  <Badge variant={automationTimer !== null ? 'default' : 'secondary'}>
+                    {automationTimer !== null 
+                      ? `In Esecuzione (${formatTimeRemaining(automationTimer)})` 
+                      : 'Inattiva'}
                   </Badge>
                 </div>
                 
@@ -519,6 +575,32 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
                   </div>
                 )}
                 
+                {automationTimer !== null && (
+                  <div className="p-4 border rounded-lg bg-green-50 border-green-200">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-sm font-medium text-green-800">
+                          Automazione in corso
+                        </div>
+                        <div className="text-lg font-bold text-green-900">
+                          {formatTimeRemaining(automationTimer)}
+                        </div>
+                        <div className="text-xs text-green-600">
+                          Avviata: {automationStartTime?.toLocaleTimeString('it-IT')}
+                        </div>
+                      </div>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={stopAutomationTimer}
+                        className="text-red-600 border-red-200 hover:bg-red-50"
+                      >
+                        Ferma
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                
                 <div className="flex gap-2">
                   <Button 
                     variant="outline" 
@@ -532,12 +614,17 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
                   <Button 
                     size="sm" 
                     onClick={runAutomation}
-                    disabled={!selectedScene || runningAutomation}
+                    disabled={!selectedScene || runningAutomation || automationTimer !== null}
                   >
                     {runningAutomation ? (
                       <>
                         <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                        Esecuzione...
+                        Avvio...
+                      </>
+                    ) : automationTimer !== null ? (
+                      <>
+                        <div className="h-4 w-4 bg-green-500 rounded-full mr-2"></div>
+                        In Esecuzione
                       </>
                     ) : (
                       <>
