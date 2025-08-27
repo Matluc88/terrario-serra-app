@@ -5,12 +5,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import KillSwitch from './components/KillSwitch'
 import ZoneTabs from './components/ZoneTabs'
 
-const API_BASE_URL = window.location.origin.includes('terrario-serra-app-1.onrender.com') 
-  ? 'https://terrario-serra-app-1.onrender.com' 
-  : (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000')
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (typeof __VITE_API_BASE_URL__ !== 'undefined' ? __VITE_API_BASE_URL__ : 'http://localhost:8000')
 console.log('DEBUG: VITE_API_BASE_URL =', import.meta.env.VITE_API_BASE_URL)
+console.log('DEBUG: __VITE_API_BASE_URL__ =', typeof __VITE_API_BASE_URL__ !== 'undefined' ? __VITE_API_BASE_URL__ : 'undefined')
 console.log('DEBUG: Final API_BASE_URL =', API_BASE_URL)
-console.log('DEBUG: Using hardcoded fix for production')
 
 interface Zone {
   id: number
