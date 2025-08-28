@@ -806,6 +806,51 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
                     </div>
                   </div>
                 )}
+                
+                {automationSession && (
+                  <div className="mt-4 p-3 border rounded-lg bg-blue-50 border-blue-200">
+                    <h5 className="text-sm font-medium text-blue-800 mb-2">Dettagli Sessione</h5>
+                    <div className="space-y-1 text-xs text-blue-600">
+                      <div>ID Sessione: {automationSession.id}</div>
+                      <div>Scena: {automationSession.scene_name}</div>
+                      <div>Stato: {automationSession.status}</div>
+                      <div>Durata: {automationSession.duration_minutes} minuti</div>
+                      {automationSession.last_evaluation_at && (
+                        <div>Ultima valutazione: {new Date(automationSession.last_evaluation_at).toLocaleString('it-IT')}</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+                
+                {automationSession && (
+                  <div className="mt-4 p-3 border rounded-lg bg-blue-50 border-blue-200">
+                    <h5 className="text-sm font-medium text-blue-800 mb-2">Dettagli Sessione</h5>
+                    <div className="space-y-1 text-xs text-blue-600">
+                      <div>ID Sessione: {automationSession.id}</div>
+                      <div>Scena: {automationSession.scene_name}</div>
+                      <div>Stato: {automationSession.status}</div>
+                      <div>Durata: {automationSession.duration_minutes} minuti</div>
+                      {automationSession.last_evaluation_at && (
+                        <div>Ultima valutazione: {new Date(automationSession.last_evaluation_at).toLocaleString('it-IT')}</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+                
+                {automationSession && (
+                  <div className="mt-4 p-3 border rounded-lg bg-blue-50 border-blue-200">
+                    <h5 className="text-sm font-medium text-blue-800 mb-2">Dettagli Sessione</h5>
+                    <div className="space-y-1 text-xs text-blue-600">
+                      <div>ID Sessione: {automationSession.id}</div>
+                      <div>Scena: {automationSession.scene_name}</div>
+                      <div>Stato: {automationSession.status}</div>
+                      <div>Durata: {automationSession.duration_minutes} minuti</div>
+                      {automationSession.last_evaluation_at && (
+                        <div>Ultima valutazione: {new Date(automationSession.last_evaluation_at).toLocaleString('it-IT')}</div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-3">
