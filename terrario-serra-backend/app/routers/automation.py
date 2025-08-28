@@ -90,6 +90,14 @@ async def start_automation_session(
     if scene.zone_id != zone_id:
         raise HTTPException(status_code=400, detail="Scene does not belong to this zone")
     
+    rules_count = db.query(SceneRule).filter(SceneRule.scene_id == session_data.scene_id).count()
+    if rules_count == 0:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Impossibile attivare automazione: la scena '{scene.name}' non ha regole associate. "
+                   f"Vai al tab Mapping per aggiungere regole alla scena."
+        )
+    
     existing_session = db.query(AutomationSession).filter(
         AutomationSession.zone_id == zone_id,
         AutomationSession.is_active == True,
