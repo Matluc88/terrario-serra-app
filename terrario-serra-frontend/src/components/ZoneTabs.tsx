@@ -85,7 +85,6 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
   const [scenes, setScenes] = useState<Scene[]>([])
   const [selectedScene, setSelectedScene] = useState<Scene | null>(null)
   const [runningAutomation, setRunningAutomation] = useState(false)
-  const [automationSession, setAutomationSession] = useState<any | null>(null)
   const [automationTimer, setAutomationTimer] = useState<number | null>(null)
   const [automationStartTime, setAutomationStartTime] = useState<Date | null>(null)
   const [detailedStatus, setDetailedStatus] = useState<any | null>(null)
@@ -266,14 +265,12 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
       if (response.ok) {
         const data = await response.json()
         if (data.has_active_session && data.active_session) {
-          setAutomationSession(data.active_session)
           setAutomationTimer(data.active_session.time_remaining_seconds)
           setAutomationStartTime(new Date(data.active_session.started_at))
           
           const scene = scenes.find(s => s.id === data.active_session.scene_id)
           if (scene) setSelectedScene(scene)
         } else {
-          setAutomationSession(null)
           setAutomationTimer(null)
           setAutomationStartTime(null)
         }
@@ -290,7 +287,6 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
       })
       
       if (response.ok) {
-        setAutomationSession(null)
         setAutomationTimer(null)
         setAutomationStartTime(null)
         onZoneUpdate()
@@ -343,7 +339,6 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
       
       if (response.ok) {
         const sessionData = await response.json()
-        setAutomationSession(sessionData)
         setAutomationTimer(sessionData.time_remaining_seconds)
         setAutomationStartTime(new Date(sessionData.started_at))
         
@@ -388,7 +383,6 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
       const interval = setInterval(() => {
         setAutomationTimer(prev => {
           if (prev === null || prev <= 1) {
-            setAutomationSession(null)
             setAutomationStartTime(null)
             onZoneUpdate()
             return null
@@ -420,7 +414,6 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
       const interval = setInterval(() => {
         setAutomationTimer(prev => {
           if (prev === null || prev <= 1) {
-            setAutomationSession(null)
             setAutomationStartTime(null)
             return null
           }
