@@ -196,6 +196,71 @@ export default function MappingInterface({ zone, outlets, onConfigUpdate }: Mapp
     }
   }
 
+  const createSceneRules = async (sceneId: number) => {
+    const rulesToCreate = []
+    
+    const ruleConfigs = [
+      { key: 'tempLow', condition: 'temperature', operator: '<=', value: parseFloat(tempMin) || 0, label: 'Temperatura Bassa' },
+      { key: 'tempHigh', condition: 'temperature', operator: '>=', value: parseFloat(tempMax) || 0, label: 'Temperatura Alta' },
+      { key: 'humidityLow', condition: 'humidity', operator: '<=', value: parseFloat(humidityMin) || 0, label: 'Umidità Bassa' },
+      { key: 'humidityHigh', condition: 'humidity', operator: '>=', value: parseFloat(humidityMax) || 0, label: 'Umidità Alta' }
+    ]
+    
+    for (const config of ruleConfigs) {
+      const rule = rules[config.key as keyof typeof rules]
+      
+      const onActions = Object.entries(rule.actions.on).filter(([, active]) => active)
+      if (onActions.length > 0) {
+        rulesToCreate.push({
+          name: `${config.label} - Accendi`,
+          condition: {
+            condition: config.condition,
+            operator: config.operator,
+            value: config.value
+          },
+          action: {
+            type: 'outlets',
+            on: Object.fromEntries(onActions)
+          },
+          priority: 0
+        })
+      }
+      
+      const offActions = Object.entries(rule.actions.off).filter(([, active]) => active)
+      if (offActions.length > 0) {
+        rulesToCreate.push({
+          name: `${config.label} - Spegni`,
+          condition: {
+            condition: config.condition,
+            operator: config.operator,
+            value: config.value
+          },
+          action: {
+            type: 'outlets',
+            off: Object.fromEntries(offActions)
+          },
+          priority: 0
+        })
+      }
+    }
+    
+    for (const ruleData of rulesToCreate) {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/v1/scenes/${sceneId}/rules`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(ruleData)
+        })
+        
+        if (!response.ok) {
+          console.error('Failed to create rule:', ruleData.name)
+        }
+      } catch (err) {
+        console.error('Error creating rule:', ruleData.name, err)
+      }
+    }
+  }
+
   const saveConfiguration = async () => {
     if (!sceneName.trim()) {
       setShowSaveDialog(true)
@@ -213,7 +278,6 @@ export default function MappingInterface({ zone, outlets, onConfigUpdate }: Mapp
         temperature_range: tempMin && tempMax ? { min: parseFloat(tempMin), max: parseFloat(tempMax) } : null,
         humidity_range: humidityMin && humidityMax ? { min: parseFloat(humidityMin), max: parseFloat(humidityMax) } : null,
         settings: {
-          rules: rules,
           outlet_configs: outletConfigs
         },
         is_active: false
@@ -226,6 +290,10 @@ export default function MappingInterface({ zone, outlets, onConfigUpdate }: Mapp
       })
 
       if (response.ok) {
+        const createdScene = await response.json()
+        
+        await createSceneRules(createdScene.id)
+        
         toast({
           title: "Successo",
           description: `Scena "${sceneName}" salvata con successo`
