@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Settings, Play, Hand, Power, Thermometer, Droplets, AlertTriangle, RefreshCw } from 'lucide-react'
+import { Settings, Play, Hand, Power, Thermometer, Droplets, AlertTriangle, RefreshCw, Activity } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
 import MappingInterface from './MappingInterface'
@@ -85,9 +85,10 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
   const [scenes, setScenes] = useState<Scene[]>([])
   const [selectedScene, setSelectedScene] = useState<Scene | null>(null)
   const [runningAutomation, setRunningAutomation] = useState(false)
-  const [, setAutomationSession] = useState<any | null>(null)
+  const [automationSession, setAutomationSession] = useState<any | null>(null)
   const [automationTimer, setAutomationTimer] = useState<number | null>(null)
   const [automationStartTime, setAutomationStartTime] = useState<Date | null>(null)
+  const [detailedStatus, setDetailedStatus] = useState<any | null>(null)
   const AUTOMATION_DURATION_MINUTES = 15
 
   const fetchDevicesAndOutlets = useCallback(async () => {
@@ -247,6 +248,18 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
     }
   }, [zone.id])
 
+  const fetchDetailedStatus = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/v1/automation/zone/${zone.id}/detailed-status`)
+      if (response.ok) {
+        const data = await response.json()
+        setDetailedStatus(data)
+      }
+    } catch (err) {
+      console.error('Error fetching detailed status:', err)
+    }
+  }, [zone.id])
+
   const fetchAutomationStatus = useCallback(async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/v1/automation/zone/${zone.id}/status`)
@@ -296,10 +309,19 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
     }
   }
 
-  const formatTimeRemaining = (seconds: number): string => {
-    const minutes = Math.floor(seconds / 60)
-    const remainingSeconds = seconds % 60
-    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
+  const formatElapsedTime = (startTime: Date): string => {
+    const now = new Date()
+    const elapsed = Math.floor((now.getTime() - startTime.getTime()) / 1000)
+    const hours = Math.floor(elapsed / 3600)
+    const minutes = Math.floor((elapsed % 3600) / 60)
+    const days = Math.floor(hours / 24)
+    
+    if (days > 0) {
+      return `${days} giorn${days === 1 ? 'o' : 'i'} ${hours % 24}h`
+    } else if (hours > 0) {
+      return `${hours}h ${minutes}m`
+    }
+    return `${minutes}m`
   }
 
   const runAutomation = async () => {
@@ -386,6 +408,14 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
   }, [scenes, fetchAutomationStatus])
 
   useEffect(() => {
+    if (activeTab === 'status') {
+      fetchDetailedStatus()
+      const interval = setInterval(fetchDetailedStatus, 10000)
+      return () => clearInterval(interval)
+    }
+  }, [activeTab, fetchDetailedStatus])
+
+  useEffect(() => {
     if (automationTimer !== null && automationTimer > 0) {
       const interval = setInterval(() => {
         setAutomationTimer(prev => {
@@ -414,7 +444,7 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
 
   return (
     <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-      <TabsList className="grid w-full grid-cols-4">
+      <TabsList className="grid w-full grid-cols-5">
         <TabsTrigger value="manual" className="flex items-center gap-2">
           <Hand className="h-4 w-4" />
           Manuale
@@ -430,6 +460,10 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
         <TabsTrigger value="automatic" className="flex items-center gap-2">
           <Play className="h-4 w-4" />
           Automatico
+        </TabsTrigger>
+        <TabsTrigger value="status" className="flex items-center gap-2">
+          <Activity className="h-4 w-4" />
+          Status
         </TabsTrigger>
       </TabsList>
 
@@ -615,9 +649,9 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium">Stato Automazione:</span>
-                  <Badge variant={automationTimer !== null ? 'default' : 'secondary'}>
-                    {automationTimer !== null 
-                      ? `In Esecuzione (${formatTimeRemaining(automationTimer)})` 
+                  <Badge variant={automationStartTime !== null ? 'default' : 'secondary'}>
+                    {automationStartTime !== null 
+                      ? `Attiva da ${formatElapsedTime(automationStartTime)}` 
                       : 'Inattiva'}
                   </Badge>
                 </div>
@@ -663,13 +697,13 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
                     <div className="flex items-center justify-between">
                       <div>
                         <div className="text-sm font-medium text-green-800">
-                          Automazione in corso
-                        </div>
-                        <div className="text-lg font-bold text-green-900">
-                          {formatTimeRemaining(automationTimer)}
+                          Automazione attiva da: {automationStartTime ? formatElapsedTime(automationStartTime) : '--'}
                         </div>
                         <div className="text-xs text-green-600">
-                          Avviata: {automationStartTime?.toLocaleTimeString('it-IT')}
+                          Avviata: {automationStartTime?.toLocaleString('it-IT')}
+                        </div>
+                        <div className="text-xs text-green-600">
+                          Prossima verifica: ogni 5 minuti
                         </div>
                       </div>
                       <Button 
@@ -721,6 +755,136 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
             </CardContent>
           </Card>
         </div>
+      </TabsContent>
+
+      <TabsContent value="status" className="space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Activity className="h-4 w-4" />
+              Status Automazione {zone.slug === 'serra' ? 'Serra' : 'Terrario'}
+            </CardTitle>
+            <CardDescription>
+              Monitoraggio in tempo reale dello stato degli interruttori e automazione
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-6">
+              <div className="space-y-3">
+                <h4 className="font-medium">Stato Automazione</h4>
+                {automationStartTime ? (
+                  <div className="p-4 border rounded-lg bg-green-50 border-green-200">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-sm font-medium text-green-800">
+                          Automazione attiva da: {formatElapsedTime(automationStartTime)}
+                        </div>
+                        <div className="text-xs text-green-600">
+                          Avviata: {automationStartTime.toLocaleString('it-IT')}
+                        </div>
+                        <div className="text-xs text-green-600">
+                          Modalità: {detailedStatus?.simulation_mode ? 'Simulazione' : 'Produzione'}
+                        </div>
+                        <div className="text-xs text-green-600">
+                          Prossima verifica: ogni 5 minuti
+                        </div>
+                        {detailedStatus?.session_info?.last_evaluation && (
+                          <div className="text-xs text-green-600">
+                            Ultima valutazione: {new Date(detailedStatus.session_info.last_evaluation).toLocaleString('it-IT')}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-4 border rounded-lg bg-gray-50">
+                    <div className="text-sm text-gray-600">
+                      Automazione non attiva
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      Modalità: {detailedStatus?.simulation_mode ? 'Simulazione' : 'Produzione'}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-3">
+                <h4 className="font-medium">Stato Interruttori</h4>
+                <div className="space-y-2">
+                  {detailedStatus?.outlet_states?.map((outlet: any) => (
+                    <div key={outlet.outlet_id} className="p-3 border rounded-lg">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="text-sm font-medium">{outlet.outlet_name}</div>
+                          <Badge variant={outlet.state ? "default" : "secondary"}>
+                            {outlet.state ? "ON" : "OFF"}
+                          </Badge>
+                        </div>
+                      </div>
+                      <div className="text-xs text-gray-600 mt-1">
+                        {outlet.explanation}
+                      </div>
+                    </div>
+                  )) || (
+                    <div className="text-sm text-gray-600">
+                      Nessun interruttore configurato per questa zona
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <h4 className="font-medium">Dati Sensori Attuali</h4>
+                {detailedStatus?.sensor_data ? (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-3 border rounded-lg">
+                      <div className="flex items-center gap-2">
+                        <Thermometer className="h-4 w-4 text-red-500" />
+                        <div>
+                          <div className="text-lg font-semibold">
+                            {detailedStatus.sensor_data.temperature !== null 
+                              ? `${detailedStatus.sensor_data.temperature}°C`
+                              : '--'}
+                          </div>
+                          <div className="text-xs text-gray-500">Temperatura</div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="p-3 border rounded-lg">
+                      <div className="flex items-center gap-2">
+                        <Droplets className="h-4 w-4 text-blue-500" />
+                        <div>
+                          <div className="text-lg font-semibold">
+                            {detailedStatus.sensor_data.humidity !== null 
+                              ? `${detailedStatus.sensor_data.humidity}%`
+                              : '--'}
+                          </div>
+                          <div className="text-xs text-gray-500">Umidità</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-sm text-gray-600">
+                    Nessun dato sensore disponibile
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-2">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={fetchDetailedStatus}
+                  disabled={loading}
+                >
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Aggiorna Status
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </TabsContent>
     </Tabs>
   )

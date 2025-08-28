@@ -3,11 +3,13 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, timedelta
 import logging
+import os
 
 from app.database import get_db
 from app.models.automation_session import AutomationSession
-from app.models.scene import Scene
+from app.models.scene import Scene, SceneRule
 from app.models.zone import Zone
+from app.models.device import Device, Outlet
 from app.schemas.automation import AutomationSessionResponse, AutomationSessionCreate, AutomationStatusResponse
 
 logger = logging.getLogger(__name__)
@@ -168,6 +170,81 @@ async def stop_automation_session(zone_id: int, db: Session = Depends(get_db)):
     logger.info(f"Stopped automation session {active_session.id} for zone {zone_id}")
     
     return {"success": True, "message": "Automation session stopped"}
+
+
+@router.get("/zone/{zone_id}/detailed-status")
+async def get_detailed_automation_status(zone_id: int, db: Session = Depends(get_db)):
+    """Get detailed automation status including switch states and explanations"""
+    from app.services.scene_automation import get_zone_sensor_data
+    
+    zone = db.query(Zone).filter(Zone.id == zone_id).first()
+    if not zone:
+        raise HTTPException(status_code=404, detail="Zone not found")
+    
+    active_session = db.query(AutomationSession).filter(
+        AutomationSession.zone_id == zone_id,
+        AutomationSession.is_active == True,
+        AutomationSession.status == "running"
+    ).first()
+    
+    try:
+        sensor_data = get_zone_sensor_data(zone_id, db)
+    except Exception as e:
+        logger.warning(f"Could not fetch sensor data for zone {zone_id}: {e}")
+        sensor_data = {"temperature": None, "humidity": None}
+    
+    outlets = db.query(Outlet).join(Device).filter(Device.zone_id == zone_id).all()
+    
+    outlet_states = []
+    for outlet in outlets:
+        explanation = "Controllo manuale"
+        if active_session:
+            scene = db.query(Scene).filter(Scene.id == active_session.scene_id).first()
+            if scene:
+                rules = db.query(SceneRule).filter(SceneRule.scene_id == scene.id).all()
+                for rule in rules:
+                    actions_on = rule.action.get('on', {}) if rule.action else {}
+                    actions_off = rule.action.get('off', {}) if rule.action else {}
+                    
+                    if str(outlet.id) in actions_on or str(outlet.id) in actions_off:
+                        condition = rule.condition if rule.condition else {}
+                        condition_type = condition.get('condition', '')
+                        operator = condition.get('operator', '')
+                        threshold = condition.get('value', '')
+                        
+                        if condition_type == 'temperature' and sensor_data.get('temperature') is not None:
+                            temp_value = sensor_data['temperature']
+                            explanation = f"Regola '{rule.name}': temperatura {temp_value}°C {operator} {threshold}°C"
+                        elif condition_type == 'humidity' and sensor_data.get('humidity') is not None:
+                            humidity_value = sensor_data['humidity']
+                            explanation = f"Regola '{rule.name}': umidità {humidity_value}% {operator} {threshold}%"
+                        else:
+                            explanation = f"Regola '{rule.name}': {condition_type} {operator} {threshold}"
+                        break
+        
+        outlet_states.append({
+            "outlet_id": outlet.id,
+            "outlet_name": outlet.custom_name,
+            "state": outlet.last_state,
+            "explanation": explanation
+        })
+    
+    session_info = None
+    if active_session:
+        session_info = {
+            "scene_name": active_session.scene.name if active_session.scene else None,
+            "started_at": active_session.started_at,
+            "last_evaluation": active_session.last_evaluation_at
+        }
+    
+    return {
+        "zone_id": zone_id,
+        "has_active_session": active_session is not None,
+        "session_info": session_info,
+        "sensor_data": sensor_data,
+        "outlet_states": outlet_states,
+        "simulation_mode": not bool(os.getenv("TUYA_ACCESS_KEY"))
+    }
 
 @router.get("/zone/{zone_id}/history", response_model=List[AutomationSessionResponse])
 async def get_automation_history(zone_id: int, limit: int = 10, db: Session = Depends(get_db)):
