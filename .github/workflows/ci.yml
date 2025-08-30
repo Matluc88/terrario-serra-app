@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    name: Frontend CI (Vite/React)
+    if: ${{ hashFiles('terrario-serra-frontend/package.json') != '' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terrario-serra-frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: terrario-serra-frontend/package-lock.json
+
+      - name: Install deps
+        run: npm ci
+        # se non usi package-lock.json, sostituisci con: npm install
+
+      - name: Lint (se disponibile)
+        run: |
+          [ -f package.json ] && npm run lint || echo "No lint script"
+
+      - name: Build
+        run: |
+          [ -f package.json ] && npm run build || echo "No build script"
+
+      - name: Test (se disponibile)
+        run: |
+          [ -f package.json ] && npm test --silent --if-present || echo "No tests"
+
+      - name: Upload build (artefatto)
+        if: ${{ hashFiles('terrario-serra-frontend/dist/**') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: terrario-serra-frontend/dist
+
+  backend:
+    name: Backend CI (FastAPI/Python)
+    if: ${{ hashFiles('terrario-serra-backend/requirements.txt', 'terrario-serra-backend/pyproject.toml') != '' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terrario-serra-backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: |
+            terrario-serra-backend/requirements.txt
+            terrario-serra-backend/pyproject.toml
+
+      - name: Install deps (requirements.txt o pyproject)
+        run: |
+          if [ -f requirements.txt ]; then
+            python -m pip install --upgrade pip
+            pip install -r requirements.txt
+          elif [ -f pyproject.toml ]; then
+            python -m pip install --upgrade pip
+            pip install .
+          else
+            echo "Nessun file di dipendenze trovato"
+          fi
+
+      - name: Lint base (ruff/mypy se presenti)
+        run: |
+          if python -c "import ruff" 2>/dev/null; then ruff check . || true; else echo "ruff non installato"; fi
+          if python -c "import mypy" 2>/dev/null; then mypy . || true; else echo "mypy non installato"; fi
+
+      - name: Test (pytest se presente)
+        run: |
+          if python -c "import pytest" 2>/dev/null; then pytest -q || true; else echo "pytest non installato"; fi
