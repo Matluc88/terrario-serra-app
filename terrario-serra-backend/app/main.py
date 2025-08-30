@@ -1,3 +1,4 @@
+from app.routers import events as events_router
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
@@ -75,6 +76,7 @@ app.include_router(health_router)
 app.include_router(kill_switch_router)
 app.include_router(zones_router)
 app.include_router(devices.router)
+app.include_router(events_router.router)  # /api/v1/events/sse
 app.include_router(sensors.router)
 app.include_router(scenes.router)
 app.include_router(automation.router)
