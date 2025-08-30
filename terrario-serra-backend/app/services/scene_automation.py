@@ -7,6 +7,7 @@ import logging
 import asyncio
 import os
 from datetime import datetime, timedelta
+from copy import deepcopy
 
 from app.models.scene import Scene, SceneRule
 from app.models.sensor import Sensor, Reading
@@ -27,6 +28,104 @@ def get_tuya_provider() -> Optional[TuyaProvider]:
         return None
     
     return TuyaProvider(access_id, access_secret, region)
+
+def normalize_scene_settings(scene: Scene, db: Session) -> Scene:
+    """
+    HOTFIX: Corregge scene con valori 0 nelle regole usando i range come fallback.
+    Funziona sia con scene.settings JSON che con SceneRule nel database.
+    """
+    try:
+        # Correggi le regole JSON se esistono in scene.settings
+        if hasattr(scene, 'settings') and scene.settings:
+            settings = scene.settings if isinstance(scene.settings, dict) else {}
+            tr = settings.get("temperature_range", {}) or {}
+            hr = settings.get("humidity_range", {}) or {}
+            rules = settings.get("rules", {}) or {}
+
+            # Validazione range
+            tr_valid = ("min" in tr and "max" in tr and float(tr["min"]) < float(tr["max"]))
+            hr_valid = ("min" in hr and "max" in hr and float(hr["min"]) < float(hr["max"]))
+            
+            if tr_valid and hr_valid:
+                def fix_rule_json(key: str, cond: str, op: str, fallback_val: float):
+                    r = rules.get(key)
+                    if not r:
+                        rules[key] = {"condition": cond, "operator": op, "value": fallback_val, "actions": {"on": {}, "off": {}}}
+                        return
+                    try:
+                        v = float(r.get("value", 0))
+                    except Exception:
+                        v = 0.0
+                    if v == 0.0:
+                        r["value"] = fallback_val
+                        logger.info(f"Corrected rule {key} value from 0 to {fallback_val}")
+
+                # Correggi le regole JSON usando i range validi
+                fix_rule_json("tempLow",  "temperature", "<=", float(tr["min"]))
+                fix_rule_json("tempHigh", "temperature", ">=", float(tr["max"]))
+                fix_rule_json("humidityLow",  "humidity", "<=", float(hr["min"]))
+                fix_rule_json("humidityHigh", "humidity", ">=", float(hr["max"]))
+                
+                settings["rules"] = rules
+                scene.settings = settings
+
+        # Correggi anche le SceneRule nel database
+        scene_rules = db.query(SceneRule).filter(SceneRule.scene_id == scene.id).all()
+        
+        # Ottieni i range dalla scene.settings per i fallback
+        settings = scene.settings if hasattr(scene, 'settings') and scene.settings else {}
+        tr = settings.get("temperature_range", {}) or {}
+        hr = settings.get("humidity_range", {}) or {}
+        
+        # Fallback ai valori standard se i range non sono validi
+        temp_min = float(tr.get("min", 20)) if tr.get("min") else 20
+        temp_max = float(tr.get("max", 26)) if tr.get("max") else 26
+        hum_min = float(hr.get("min", 55)) if hr.get("min") else 55
+        hum_max = float(hr.get("max", 70)) if hr.get("max") else 70
+
+        for rule in scene_rules:
+            try:
+                if rule.condition and isinstance(rule.condition, dict):
+                    condition = rule.condition
+                    condition_type = condition.get('condition')
+                    operator = condition.get('operator')
+                    current_value = condition.get('value', 0)
+                    
+                    # Correggi valori 0 con fallback appropriati
+                    if float(current_value) == 0.0:
+                        if condition_type == 'temperature':
+                            if operator == '<=':
+                                new_value = temp_min
+                            elif operator == '>=':
+                                new_value = temp_max
+                            else:
+                                new_value = temp_max
+                        elif condition_type == 'humidity':
+                            if operator == '<=':
+                                new_value = hum_min
+                            elif operator == '>=':
+                                new_value = hum_max
+                            else:
+                                new_value = hum_max
+                        else:
+                            continue
+                        
+                        # Aggiorna la condizione
+                        condition['value'] = new_value
+                        rule.condition = condition
+                        logger.info(f"Corrected SceneRule {rule.id} {condition_type} value from 0 to {new_value}")
+                        
+            except Exception as e:
+                logger.warning(f"Error normalizing SceneRule {rule.id}: {str(e)}")
+                continue
+        
+        # Salva le modifiche alle SceneRule
+        db.commit()
+        
+    except Exception as e:
+        logger.error(f"Error normalizing scene {scene.id}: {str(e)}")
+    
+    return scene
 
 def get_zone_sensor_data(zone_id: int, db: Session) -> Dict[str, Any]:
     """Get latest sensor readings for a zone"""
@@ -63,25 +162,48 @@ def evaluate_scene_condition(condition: Dict[str, Any], sensor_data: Dict[str, A
     if not all([condition_type, operator, threshold_value is not None]):
         logger.warning(f"Invalid condition format: {condition}")
         return False
+    
+    # HOTFIX: Salta condizioni con valore 0 (significa regola disabilitata)
+    try:
+        threshold_value = float(threshold_value)
+        if threshold_value == 0.0:
+            logger.debug(f"Skipping condition with value 0: {condition}")
+            return False
+    except Exception:
+        logger.warning(f"Invalid threshold value: {threshold_value}")
+        return False
         
     sensor_value = sensor_data.get(condition_type)
     if sensor_value is None:
         logger.warning(f"No sensor data available for {condition_type}")
         return False
     
+    # Verifica che i dati del sensore non siano troppo vecchi (max 2 minuti)
+    timestamp_key = f"{condition_type}_timestamp"
+    if timestamp_key in sensor_data:
+        sensor_timestamp = sensor_data[timestamp_key]
+        if isinstance(sensor_timestamp, datetime):
+            age = datetime.now() - sensor_timestamp
+            if age.total_seconds() > 120:  # 2 minuti
+                logger.warning(f"Sensor data too old for {condition_type}: {age.total_seconds()}s")
+                return False
+    
     if operator == '<=':
-        return sensor_value <= threshold_value
+        result = sensor_value <= threshold_value
     elif operator == '>=':
-        return sensor_value >= threshold_value
+        result = sensor_value >= threshold_value
     elif operator == '<':
-        return sensor_value < threshold_value
+        result = sensor_value < threshold_value
     elif operator == '>':
-        return sensor_value > threshold_value
+        result = sensor_value > threshold_value
     elif operator == '==':
-        return sensor_value == threshold_value
+        result = sensor_value == threshold_value
     else:
         logger.warning(f"Unknown operator: {operator}")
         return False
+    
+    logger.debug(f"Condition eval: {sensor_value} {operator} {threshold_value} = {result}")
+    return result
 
 async def execute_rule_action(action: Dict[str, Any], zone_id: int, db: Session) -> Dict[str, Any]:
     """Execute a rule action (outlet switching)"""
@@ -99,6 +221,11 @@ async def execute_rule_action(action: Dict[str, Any], zone_id: int, db: Session)
                 outlet = outlet_map[outlet_id]
                 device = outlet.device
                 
+                # Verifica se è già nello stato desiderato (idempotenza)
+                if outlet.last_state is True:
+                    logger.debug(f"Outlet {outlet.custom_name} already ON - skipping")
+                    continue
+                
                 if tuya and device.provider == "tuya":
                     try:
                         result = await tuya.switch_outlet(device.provider_device_id, outlet.channel, True)
@@ -114,6 +241,7 @@ async def execute_rule_action(action: Dict[str, Any], zone_id: int, db: Session)
                         success = False
                 else:
                     logger.info(f"SIMULATION: Would turn ON outlet {outlet.custom_name} (ID: {outlet_id})")
+                    outlet.last_state = True
                     success = True
                 
                 executed_switches.append({
@@ -130,6 +258,11 @@ async def execute_rule_action(action: Dict[str, Any], zone_id: int, db: Session)
                 outlet = outlet_map[outlet_id]
                 device = outlet.device
                 
+                # Verifica se è già nello stato desiderato (idempotenza)
+                if outlet.last_state is False:
+                    logger.debug(f"Outlet {outlet.custom_name} already OFF - skipping")
+                    continue
+                
                 if tuya and device.provider == "tuya":
                     try:
                         result = await tuya.switch_outlet(device.provider_device_id, outlet.channel, False)
@@ -145,6 +278,7 @@ async def execute_rule_action(action: Dict[str, Any], zone_id: int, db: Session)
                         success = False
                 else:
                     logger.info(f"SIMULATION: Would turn OFF outlet {outlet.custom_name} (ID: {outlet_id})")
+                    outlet.last_state = False
                     success = True
                 
                 executed_switches.append({
@@ -174,19 +308,30 @@ async def process_scene_rules(scene_id: int, db: Session) -> Dict[str, Any]:
     if not scene or not scene.is_active:
         return {"success": False, "message": "Scene not found or not active"}
     
+    # HOTFIX: Normalizza la scena prima di processare le regole
+    scene = normalize_scene_settings(scene, db)
+    
     sensor_data = get_zone_sensor_data(scene.zone_id, db)
     if not sensor_data:
         return {"success": False, "message": "No sensor data available"}
     
+    logger.info(f"Processing scene {scene.id} with sensor data: temp={sensor_data.get('temperature')}°C, hum={sensor_data.get('humidity')}%")
+    
     rules = db.query(SceneRule).filter(
         SceneRule.scene_id == scene_id
     ).order_by(SceneRule.priority.desc()).all()
+    
+    if not rules:
+        logger.warning(f"No rules found for scene {scene_id}")
+        return {"success": False, "message": "No rules configured for scene"}
     
     executed_actions = []
     
     for rule in rules:
         try:
             condition_met = evaluate_scene_condition(rule.condition, sensor_data)
+            
+            logger.info(f"Rule {rule.name} (ID: {rule.id}) condition met: {condition_met}")
             
             if condition_met:
                 action_result = await execute_rule_action(rule.action, scene.zone_id, db)
