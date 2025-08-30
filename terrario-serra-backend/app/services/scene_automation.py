@@ -1,219 +1,207 @@
 """
 Scene automation service for processing environmental conditions
 """
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import Dict, List, Any, Optional
 import logging
-import asyncio
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from app.models.scene import Scene, SceneRule
 from app.models.sensor import Sensor, Reading
 from app.models.device import Device, Outlet
 from app.providers.tuya_provider import TuyaProvider
-from app.database import get_db
 
 logger = logging.getLogger(__name__)
 
 def get_tuya_provider() -> Optional[TuyaProvider]:
     """Get configured Tuya provider instance, returns None if not configured"""
-    access_id = os.getenv("TUYA_ACCESS_KEY")
-    access_secret = os.getenv("TUYA_SECRET_KEY")
+    access_id = os.getenv("TUYA_ACCESS_KEY") or os.getenv("TUYA_ACCESS_ID") or os.getenv("TUYA_CLIENT_ID")
+    access_secret = os.getenv("TUYA_SECRET_KEY") or os.getenv("TUYA_ACCESS_SECRET") or os.getenv("TUYA_CLIENT_SECRET")
     region = os.getenv("TUYA_REGION", "eu")
-    
+
     if not access_id or not access_secret:
-        logger.info("Tuya credentials not configured - running in simulation mode")
+        logger.info("Tuya credentials not configured - running in SIMULATION mode")
         return None
-    
+
     return TuyaProvider(access_id, access_secret, region)
 
 def get_zone_sensor_data(zone_id: int, db: Session) -> Dict[str, Any]:
-    """Get latest sensor readings for a zone"""
+    """Get latest sensor readings for a zone (aggregated)"""
     sensors = db.query(Sensor).filter(Sensor.zone_id == zone_id).all()
-    
-    sensor_data = {}
+
+    sensor_data: Dict[str, Any] = {}
     for sensor in sensors:
-        latest_temp = db.query(Reading).filter(
-            Reading.sensor_id == sensor.id,
-            Reading.unit == "°C"
-        ).order_by(Reading.observed_at.desc()).first()
-        
-        latest_humidity = db.query(Reading).filter(
-            Reading.sensor_id == sensor.id,
-            Reading.unit == "%"
-        ).order_by(Reading.observed_at.desc()).first()
-        
-        if latest_temp:
-            sensor_data['temperature'] = latest_temp.value
-            sensor_data['temperature_timestamp'] = latest_temp.observed_at
-            
-        if latest_humidity:
-            sensor_data['humidity'] = latest_humidity.value
-            sensor_data['humidity_timestamp'] = latest_humidity.observed_at
-    
+        latest_temp = (
+            db.query(Reading)
+            .filter(Reading.sensor_id == sensor.id, Reading.unit == "°C")
+            .order_by(Reading.observed_at.desc())
+            .first()
+        )
+        latest_humidity = (
+            db.query(Reading)
+            .filter(Reading.sensor_id == sensor.id, Reading.unit == "%")
+            .order_by(Reading.observed_at.desc())
+            .first()
+        )
+
+        if latest_temp and ("temperature" not in sensor_data or latest_temp.observed_at > sensor_data.get("temperature_timestamp", datetime.min)):
+            sensor_data["temperature"] = latest_temp.value
+            sensor_data["temperature_timestamp"] = latest_temp.observed_at
+
+        if latest_humidity and ("humidity" not in sensor_data or latest_humidity.observed_at > sensor_data.get("humidity_timestamp", datetime.min)):
+            sensor_data["humidity"] = latest_humidity.value
+            sensor_data["humidity_timestamp"] = latest_humidity.observed_at
+
     return sensor_data
 
 def evaluate_scene_condition(condition: Dict[str, Any], sensor_data: Dict[str, Any]) -> bool:
     """Evaluate a single scene rule condition against sensor data"""
-    condition_type = condition.get('condition')  # 'temperature' or 'humidity'
-    operator = condition.get('operator')  # '<=', '>=', '<', '>', '=='
-    threshold_value = condition.get('value')
-    
-    if not all([condition_type, operator, threshold_value is not None]):
+    cond = condition.get("condition")  # 'temperature' or 'humidity'
+    op = condition.get("operator")     # '<=', '>=', '<', '>', '=='
+    threshold = condition.get("value")
+
+    if cond not in ("temperature", "humidity") or op is None or threshold is None:
         logger.warning(f"Invalid condition format: {condition}")
         return False
-        
-    sensor_value = sensor_data.get(condition_type)
-    if sensor_value is None:
-        logger.warning(f"No sensor data available for {condition_type}")
-        return False
-    
-    if operator == '<=':
-        return sensor_value <= threshold_value
-    elif operator == '>=':
-        return sensor_value >= threshold_value
-    elif operator == '<':
-        return sensor_value < threshold_value
-    elif operator == '>':
-        return sensor_value > threshold_value
-    elif operator == '==':
-        return sensor_value == threshold_value
-    else:
-        logger.warning(f"Unknown operator: {operator}")
+
+    value = sensor_data.get(cond)
+    if value is None:
+        logger.warning(f"No sensor data available for {cond}")
         return False
 
-async def execute_rule_action(action: Dict[str, Any], zone_id: int, db: Session) -> Dict[str, Any]:
-    """Execute a rule action (outlet switching)"""
-    try:
-        outlets = db.query(Outlet).join(Device).filter(Device.zone_id == zone_id).all()
-        outlet_map = {outlet.id: outlet for outlet in outlets}
-        
-        executed_switches = []
-        tuya = get_tuya_provider()
-        
-        on_actions = action.get('on', {})
-        for outlet_id_str, should_turn_on in on_actions.items():
-            outlet_id = int(outlet_id_str)
-            if outlet_id in outlet_map and should_turn_on:
-                outlet = outlet_map[outlet_id]
-                device = outlet.device
-                
-                if tuya and device.provider == "tuya":
-                    try:
-                        result = await tuya.switch_outlet(device.provider_device_id, outlet.channel, True)
-                        if result.get("success"):
-                            outlet.last_state = True
-                            logger.info(f"Successfully turned ON outlet {outlet.custom_name} (ID: {outlet_id})")
-                            success = True
-                        else:
-                            logger.error(f"Failed to turn ON outlet {outlet.custom_name}: {result.get('error')}")
-                            success = False
-                    except Exception as e:
-                        logger.error(f"Error turning ON outlet {outlet.custom_name}: {str(e)}")
-                        success = False
+    if op == "<=":
+        return value <= threshold
+    if op == ">=":
+        return value >= threshold
+    if op == "<":
+        return value < threshold
+    if op == ">":
+        return value > threshold
+    if op == "==":
+        return value == threshold
+
+    logger.warning(f"Unknown operator: {op}")
+    return False
+
+async def apply_desired_states(desired: Dict[int, bool], zone_id: int, db: Session) -> Dict[str, Any]:
+    """
+    Apply desired on/off states to outlets in the zone.
+    Only sends commands when desired != current last_state.
+    """
+    outlets: List[Outlet] = (
+        db.query(Outlet)
+        .join(Device)
+        .options(joinedload(Outlet.device))
+        .filter(Device.zone_id == zone_id)
+        .all()
+    )
+    outlet_map = {o.id: o for o in outlets}
+
+    tuya = get_tuya_provider()
+    executed: List[Dict[str, Any]] = []
+
+    for outlet_id, want_on in desired.items():
+        outlet = outlet_map.get(outlet_id)
+        if not outlet:
+            logger.warning(f"Desired state for unknown outlet id={outlet_id} (ignored)")
+            continue
+
+        if outlet.last_state == want_on:
+            executed.append({
+                "outlet_id": outlet_id,
+                "outlet_name": outlet.custom_name,
+                "action": "noop",
+                "success": True,
+                "reason": "already_in_desired_state"
+            })
+            continue
+
+        device = outlet.device
+        ok = True
+
+        if tuya and device and device.provider == "tuya":
+            try:
+                res = await tuya.switch_outlet(device.provider_device_id, outlet.channel, bool(want_on))
+                ok = bool(res.get("success"))
+                if ok:
+                    logger.info(f"AUTOMATION: set {outlet.custom_name} (#{outlet.id}) -> {want_on}")
+                    outlet.last_state = bool(want_on)
                 else:
-                    logger.info(f"SIMULATION: Would turn ON outlet {outlet.custom_name} (ID: {outlet_id})")
-                    success = True
-                
-                executed_switches.append({
-                    "outlet_id": outlet_id,
-                    "outlet_name": outlet.custom_name,
-                    "action": "on",
-                    "success": success
-                })
-        
-        off_actions = action.get('off', {})
-        for outlet_id_str, should_turn_off in off_actions.items():
-            outlet_id = int(outlet_id_str)
-            if outlet_id in outlet_map and should_turn_off:
-                outlet = outlet_map[outlet_id]
-                device = outlet.device
-                
-                if tuya and device.provider == "tuya":
-                    try:
-                        result = await tuya.switch_outlet(device.provider_device_id, outlet.channel, False)
-                        if result.get("success"):
-                            outlet.last_state = False
-                            logger.info(f"Successfully turned OFF outlet {outlet.custom_name} (ID: {outlet_id})")
-                            success = True
-                        else:
-                            logger.error(f"Failed to turn OFF outlet {outlet.custom_name}: {result.get('error')}")
-                            success = False
-                    except Exception as e:
-                        logger.error(f"Error turning OFF outlet {outlet.custom_name}: {str(e)}")
-                        success = False
-                else:
-                    logger.info(f"SIMULATION: Would turn OFF outlet {outlet.custom_name} (ID: {outlet_id})")
-                    success = True
-                
-                executed_switches.append({
-                    "outlet_id": outlet_id,
-                    "outlet_name": outlet.custom_name,
-                    "action": "off",
-                    "success": success
-                })
-        
-        db.commit()
-        
-        return {
-            "success": True,
-            "executed_switches": executed_switches
-        }
-        
-    except Exception as e:
-        logger.error(f"Error executing rule action: {str(e)}")
-        return {
-            "success": False,
-            "error": str(e)
-        }
+                    logger.error(f"Tuya error switching {outlet.custom_name}: {res.get('error')}")
+            except Exception as e:
+                ok = False
+                logger.exception(f"Exception switching {outlet.custom_name}: {e}")
+        else:
+            logger.info(f"SIMULATION: would set {outlet.custom_name} (#{outlet.id}) -> {want_on}")
+            outlet.last_state = bool(want_on)
+
+        executed.append({
+            "outlet_id": outlet_id,
+            "outlet_name": outlet.custom_name,
+            "action": "on" if want_on else "off",
+            "success": ok
+        })
+
+    db.commit()
+
+    return {"success": True, "executed_switches": executed}
 
 async def process_scene_rules(scene_id: int, db: Session) -> Dict[str, Any]:
-    """Process all rules for a scene and execute actions"""
-    scene = db.query(Scene).filter(Scene.id == scene_id).first()
+    """
+    Process all rules for a scene and execute actions.
+    Priority crescente: l’ultima che tocca la stessa presa vince.
+    """
+    scene: Optional[Scene] = db.query(Scene).filter(Scene.id == scene_id).first()
     if not scene or not scene.is_active:
         return {"success": False, "message": "Scene not found or not active"}
-    
-    sensor_data = get_zone_sensor_data(scene.zone_id, db)
-    if not sensor_data:
+
+    sensors = get_zone_sensor_data(scene.zone_id, db)
+    if not sensors:
         return {"success": False, "message": "No sensor data available"}
-    
-    rules = db.query(SceneRule).filter(
-        SceneRule.scene_id == scene_id
-    ).order_by(SceneRule.priority.desc()).all()
-    
-    executed_actions = []
-    
-    for rule in rules:
+
+    rules: List[SceneRule] = (
+        db.query(SceneRule)
+        .filter(SceneRule.scene_id == scene_id)
+        .order_by(SceneRule.priority.asc())
+        .all()
+    )
+
+    desired: Dict[int, bool] = {}
+    trace: List[Dict[str, Any]] = []
+
+    for r in rules:
+        met = False
         try:
-            condition_met = evaluate_scene_condition(rule.condition, sensor_data)
-            
-            if condition_met:
-                action_result = await execute_rule_action(rule.action, scene.zone_id, db)
-                executed_actions.append({
-                    "rule_id": rule.id,
-                    "rule_name": rule.name,
-                    "condition_met": True,
-                    "action_result": action_result
-                })
-            else:
-                executed_actions.append({
-                    "rule_id": rule.id, 
-                    "rule_name": rule.name,
-                    "condition_met": False
-                })
-                
+            met = evaluate_scene_condition(r.condition, sensors)
         except Exception as e:
-            logger.error(f"Error processing rule {rule.id}: {str(e)}")
-            executed_actions.append({
-                "rule_id": rule.id,
-                "rule_name": rule.name,
-                "error": str(e)
-            })
-    
+            logger.exception(f"Error evaluating rule {r.id}: {e}")
+
+        if met:
+            for bucket, want in (("on", True), ("off", False)):
+                part = (r.action or {}).get(bucket, {}) or {}
+                for k, flag in part.items():
+                    if not flag:
+                        continue
+                    try:
+                        oid = int(k)
+                    except Exception:
+                        logger.warning(f"Ignoring non-integer outlet key: {k}")
+                        continue
+                    desired[oid] = want
+        trace.append({
+            "rule_id": r.id,
+            "rule_name": r.name,
+            "priority": r.priority,
+            "condition_met": bool(met)
+        })
+
+    applied = await apply_desired_states(desired, scene.zone_id, db)
+
     return {
         "success": True,
         "scene_id": scene_id,
-        "sensor_data": sensor_data,
-        "executed_actions": executed_actions
+        "sensor_data": sensors,
+        "trace": trace,
+        "applied": applied
     }
