@@ -5,6 +5,8 @@ from typing import Dict, Any, Optional, List
 import tinytuya
 from datetime import datetime
 from app.database import get_utc_datetime
+from app.services.rate_limiter import get_rate_limiter
+from app.services.device_cache import get_device_cache
 
 logger = logging.getLogger(__name__)
 
@@ -28,19 +30,59 @@ class TuyaProvider:
             )
         return self._cloud
     
-    async def get_device_status(self, device_id: str) -> Dict[str, Any]:
-        """Get current status of a Tuya device"""
+    async def get_device_status(self, device_id: str, use_cache: bool = True) -> Dict[str, Any]:
+        """Get current status of a Tuya device with caching and rate limiting"""
         try:
+            cache = get_device_cache()
+            rate_limiter = get_rate_limiter()
+            
+            if use_cache:
+                cached_status = await cache.get_cached_status(device_id)
+                if cached_status is not None:
+                    logger.debug(f"Using cached status for device {device_id}")
+                    return {
+                        "success": True,
+                        "device_id": device_id,
+                        "status": cached_status,
+                        "timestamp": get_utc_datetime().isoformat(),
+                        "from_cache": True
+                    }
+            
+            rate_check = await rate_limiter.can_make_call(device_id, "status")
+            if not rate_check["allowed"]:
+                logger.warning(f"Rate limit exceeded for device {device_id}: {rate_check['reason']}")
+                
+                cached_status = await cache.get_cached_status(device_id)
+                if cached_status is not None:
+                    logger.info(f"Returning expired cache due to rate limit for device {device_id}")
+                    return {
+                        "success": True,
+                        "device_id": device_id,
+                        "status": cached_status,
+                        "timestamp": get_utc_datetime().isoformat(),
+                        "from_cache": True,
+                        "rate_limited": True
+                    }
+                
+                return {
+                    "success": False,
+                    "error": f"Rate limit exceeded: {rate_check['reason']}",
+                    "rate_limit_info": rate_check
+                }
+            
             loop = asyncio.get_event_loop()
             response = await loop.run_in_executor(
                 None, self.cloud.getstatus, device_id
             )
+            
+            await rate_limiter.record_call(device_id, "status", True)
             
             if isinstance(response, str):
                 response = json.loads(response)
             
             if not response.get("success"):
                 logger.error(f"Failed to get device status for {device_id}: {response}")
+                await rate_limiter.record_call(device_id, "status", False)
                 return {"success": False, "error": response.get("msg", "Unknown error")}
             
             status_map = {}
@@ -48,22 +90,47 @@ class TuyaProvider:
                 if isinstance(item, dict) and "code" in item and "value" in item:
                     status_map[item["code"]] = item["value"]
             
+            if use_cache:
+                await cache.cache_device_status(device_id, status_map)
+            
             return {
                 "success": True,
                 "device_id": device_id,
                 "status": status_map,
-                "timestamp": get_utc_datetime().isoformat()
+                "timestamp": get_utc_datetime().isoformat(),
+                "from_cache": False
             }
             
         except Exception as e:
             logger.error(f"Error getting device status for {device_id}: {str(e)}")
+            rate_limiter = get_rate_limiter()
+            await rate_limiter.record_call(device_id, "status", False)
             return {"success": False, "error": str(e)}
     
     async def switch_outlet(self, device_id: str, channel: str, state: bool) -> Dict[str, Any]:
-        """Switch a specific outlet on/off"""
+        """Switch a specific outlet on/off with rate limiting"""
         try:
+            rate_limiter = get_rate_limiter()
+            
+            rate_check = await rate_limiter.can_make_call(device_id, "switch")
+            if not rate_check["allowed"]:
+                logger.warning(f"Rate limit exceeded for device {device_id}: {rate_check['reason']}")
+                return {
+                    "success": False,
+                    "error": f"Rate limit exceeded: {rate_check['reason']}",
+                    "rate_limit_info": rate_check
+                }
+            
             commands = [{"code": channel, "value": state}]
-            return await self._send_commands(device_id, commands)
+            result = await self._send_commands(device_id, commands)
+            
+            await rate_limiter.record_call(device_id, "switch", result.get("success", False))
+            
+            if result.get("success"):
+                cache = get_device_cache()
+                await cache.invalidate_device(device_id)
+            
+            return result
             
         except Exception as e:
             logger.error(f"Error switching outlet {channel} on device {device_id}: {str(e)}")
@@ -86,9 +153,11 @@ class TuyaProvider:
             return {"success": False, "error": str(e)}
     
     async def switch_zone_outlets(self, zone_outlets: List[Dict[str, Any]], state: bool) -> Dict[str, Any]:
-        """Switch multiple outlets across potentially multiple devices"""
+        """Switch multiple outlets across potentially multiple devices with batching optimization"""
         results = []
+        rate_limiter = get_rate_limiter()
         
+        device_groups = {}
         for outlet_info in zone_outlets:
             device_id = outlet_info.get("device_id")
             channel = outlet_info.get("channel")
@@ -101,16 +170,69 @@ class TuyaProvider:
                 })
                 continue
             
-            result = await self.switch_outlet(device_id, channel, state)
-            result["outlet"] = outlet_info
-            results.append(result)
+            if device_id not in device_groups:
+                device_groups[device_id] = []
+            device_groups[device_id].append(outlet_info)
+        
+        for device_id, outlets in device_groups.items():
+            try:
+                rate_check = await rate_limiter.can_make_call(device_id, "batch_switch")
+                if not rate_check["allowed"]:
+                    logger.warning(f"Rate limit exceeded for device {device_id}: {rate_check['reason']}")
+                    for outlet_info in outlets:
+                        results.append({
+                            "success": False,
+                            "error": f"Rate limit exceeded: {rate_check['reason']}",
+                            "outlet": outlet_info,
+                            "rate_limit_info": rate_check
+                        })
+                    continue
+                
+                if len(outlets) > 1:
+                    commands = []
+                    for outlet_info in outlets:
+                        commands.append({"code": outlet_info["channel"], "value": state})
+                    
+                    batch_result = await self._send_commands(device_id, commands)
+                    await rate_limiter.record_call(device_id, "batch_switch", batch_result.get("success", False))
+                    
+                    if batch_result.get("success"):
+                        cache = get_device_cache()
+                        await cache.invalidate_device(device_id)
+                    
+                    for outlet_info in outlets:
+                        result = {
+                            "success": batch_result.get("success", False),
+                            "outlet": outlet_info,
+                            "batch_operation": True
+                        }
+                        if not batch_result.get("success"):
+                            result["error"] = batch_result.get("error", "Batch operation failed")
+                        results.append(result)
+                    
+                    logger.info(f"Batched {len(outlets)} outlets on device {device_id}")
+                else:
+                    outlet_info = outlets[0]
+                    result = await self.switch_outlet(device_id, outlet_info["channel"], state)
+                    result["outlet"] = outlet_info
+                    results.append(result)
+                    
+            except Exception as e:
+                logger.error(f"Error processing device {device_id}: {str(e)}")
+                for outlet_info in outlets:
+                    results.append({
+                        "success": False,
+                        "error": str(e),
+                        "outlet": outlet_info
+                    })
         
         all_success = all(r.get("success", False) for r in results)
         
         return {
             "success": all_success,
             "results": results,
-            "timestamp": get_utc_datetime().isoformat()
+            "timestamp": get_utc_datetime().isoformat(),
+            "batched_devices": len(device_groups)
         }
     
     async def set_countdown(self, device_id: str, channel: str, seconds: int) -> Dict[str, Any]:

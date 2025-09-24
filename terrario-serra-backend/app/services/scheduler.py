@@ -2,6 +2,7 @@
 Automated scene evaluation scheduler
 """
 import asyncio
+import os
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy.orm import Session
@@ -90,14 +91,16 @@ def evaluate_all_active_scenes():
 def start_scheduler():
     """Start the automated scene evaluation scheduler"""
     if not scheduler.running:
+        interval_seconds = int(os.getenv("RULE_TICK_SECONDS", "300"))
+        
         scheduler.add_job(
             evaluate_all_active_scenes,
-            IntervalTrigger(seconds=300),  # 5 minutes
+            IntervalTrigger(seconds=interval_seconds),
             id='scene_evaluation',
             replace_existing=True
         )
         scheduler.start()
-        logger.info("Scene evaluation scheduler started (interval: 5 minutes)")
+        logger.info(f"Scene evaluation scheduler started (interval: {interval_seconds} seconds)")
 
 def stop_scheduler():
     """Stop the scheduler"""

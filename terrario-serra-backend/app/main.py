@@ -7,7 +7,7 @@ import psycopg
 from app.database import engine, get_db
 from app.models import Base
 from app.routers import kill_switch_router, zones_router, health_router
-from app.routers import devices, sensors, scenes, automation
+from app.routers import devices, sensors, scenes, automation, api_monitoring
 
 Base.metadata.create_all(bind=engine)
 
@@ -78,6 +78,7 @@ app.include_router(devices.router)
 app.include_router(sensors.router)
 app.include_router(scenes.router)
 app.include_router(automation.router)
+app.include_router(api_monitoring.router)
 
 @app.get("/healthz")
 async def healthz():
