@@ -84,9 +84,9 @@ async def get_device_outlets(device_id: int, db: Session = Depends(get_db)):
     }
 
 @router.get("/{device_id}/status")
-async def get_device_status(device_id: int, db: Session = Depends(get_db)):
+async def get_device_status(device_id: str, db: Session = Depends(get_db)):
     """Get real-time status from Tuya device"""
-    device = db.query(Device).filter(Device.id == device_id).first()
+    device = db.query(Device).filter(Device.provider_device_id == device_id).first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
     
