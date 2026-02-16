@@ -1,3 +1,7 @@
+import { useDevices } from '@/hooks/useDevices'
+import { useDeviceEvents } from '@/hooks/useDeviceEvents'
+import { useMutation } from '@tanstack/react-query'
+import { switchOutlet } from '@/api'
 import { useState, useEffect, useCallback } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -90,6 +94,30 @@ export default function ZoneTabs({ zone, onZoneUpdate }: ZoneTabsProps) {
   const [automationStartTime, setAutomationStartTime] = useState<Date | null>(null)
   const [detailedStatus, setDetailedStatus] = useState<any | null>(null)
   const AUTOMATION_DURATION_MINUTES = 15
+// Automazione attiva?
+const automationRunning = zone?.mode === 'automatic'
+
+// SSE: quando arriva un evento dal backend, aggiorniamo lo stato delle prese
+useDeviceEvents(zone.id, (e) => {
+  // e.outletId deve corrispondere al tuo outlet.id
+  setOutlets((prev) =>
+    prev.map((o) =>
+      String(o.id) === String(e.outletId)
+        ? { ...o, last_state: e.power === 'on' }
+        : o
+    )
+  )
+})
+
+// Polling leggero SOLO quando l’automazione è ON (fail-safe)
+useEffect(() => {
+  if (!automationRunning) return
+  const i = setInterval(() => {
+    fetchDevicesAndOutlets().catch(() => {})
+  }, 2000)
+  return () => clearInterval(i)
+}, [automationRunning, fetchDevicesAndOutlets])
+
 
   const fetchDevicesAndOutlets = useCallback(async () => {
     try {
